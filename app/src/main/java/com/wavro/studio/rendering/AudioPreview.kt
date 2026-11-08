@@ -1,166 +1,155 @@
 package com.wavro.studio.rendering
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.compose.runtime.withFrameNanos
-import com.wavro.studio.audio.PlaybackState
-import com.wavro.studio.domain.ElementType
-import com.wavro.studio.domain.StudioProject
+import com.wavro.studio.domain.Layer
+import com.wavro.studio.domain.LayerType
+import com.wavro.studio.visualization.SpectrumMapper
+import kotlin.math.cos
 import kotlin.math.sin
-
-private val Coral = Color(0xFFFF9A6B)
-private val Violet = Color(0xFF8F7BFF)
 
 @Composable
 fun AudioPreview(
-private val Coral = Color(0xFFD97757)
-private val Violet = Color(0xFFB0AEA5)
-    modifier: Modifier = Modifier,
+    layers: List<Layer>,
+    bands: SpectrumMapper.Bands,
+    modifier: Modifier = Modifier
 ) {
-    var phase by remember { mutableFloatStateOf(0f) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            withFrameNanos { time -> phase = time / 1_000_000_000f }
+    Canvas(modifier = modifier.fillMaxSize()) {
+        // Draw dark canvas background
+        drawRect(Color.Black)
+
+        layers.filter { it.visible }.forEach { layer ->
+            when (layer.type) {
+                LayerType.BARS -> drawBars(layer, bands)
+                LayerType.CIRCLE -> drawCircleBars(layer, bands)
+                LayerType.WAVE -> drawWave(layer, bands)
+                LayerType.DOTS -> drawDots(layer, bands)
+                LayerType.PARTICLES -> drawParticles(layer, bands)
+                LayerType.TEXT -> drawTextLayer(layer)
+                LayerType.CONCENTRIC -> drawConcentric(layer, bands)
+                LayerType.BACKGROUND -> drawRect(
+                    color = Color(layer.colorPrimary),
+                    size = size
+                )
+                else -> Unit
+            }
         }
     }
+}
 
-    val enabledTypes = remember(project.elements) {
-        project.elements.filter { it.enabled }.map { it.type }.toSet()
+private fun DrawScope.drawBars(layer: Layer, b: SpectrumMapper.Bands) {
+    val span = size.width * 0.8f
+    val len = size.height * 0.35f * (layer.barLength / 100f)
+    val n = layer.barCount
+    val sl = span / n
+    val bw = sl * (layer.barThickness / 100f)
+    val x0 = (size.width - span) / 2f
+    val y0 = size.height * (layer.y / 100f)
+    val bands = floatArrayOf(b.bass, b.lowMid, b.mid, b.upMid, b.presence, b.brill)
+    repeat(n) { i ->
+        val v = bands[i % bands.size]
+        val h = (len * v).coerceAtLeast(1f)
+        drawRect(
+            color = Color(layer.colorPrimary),
+            topLeft = Offset(x0 + i * sl + (sl - bw) / 2f, y0 - h),
+            size = Size(bw, h)
+        )
     }
+}
 
-    Box(modifier = modifier) {
-        Canvas(Modifier.fillMaxWidth().height(300.dp)) {
-            drawRect(
-                brush = Brush.verticalGradient(
-                    listOf(Color(0xFF17151F), Color(0xFF0D0D12), Color(0xFF15111A)),
-                ),
-            )
-            val center = androidx.compose.ui.geometry.Offset(size.width / 2f, size.height / 2f + 12.dp.toPx())
-            val barsEnabled = enabledTypes.isEmpty() || ElementType.BARS in enabledTypes
-                    listOf(Color(0xFF171715), Color.Black, Color(0xFF262624)),
-            val particlesEnabled = ElementType.PARTICLES in enabledTypes
-            val values = playback.spectrum
-
-            if (radialEnabled) {
-                val average = values.average().toFloat().coerceIn(0f, 1f)
-                val radius = size.minDimension * 0.19f + average * 15.dp.toPx()
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        listOf(Coral.copy(alpha = 0.22f), Violet.copy(alpha = 0.04f), Color.Transparent),
-                        center = center,
-                        radius = radius * 2.8f,
-                    ),
-                    radius = radius * 2.8f,
-                    center = center,
-                )
-                drawCircle(
-                    color = Coral.copy(alpha = 0.65f),
-                    radius = radius,
-                    center = center,
-                    style = Stroke(width = 1.5.dp.toPx()),
-                )
-                drawCircle(
-                    color = Violet.copy(alpha = 0.35f),
-                    radius = radius + 8.dp.toPx(),
-                    center = center,
-                    style = Stroke(width = 1.dp.toPx()),
-                )
-            }
-
-            if (barsEnabled) {
-                val count = 64
-                val gap = 3.dp.toPx()
-                val barWidth = ((size.width * 0.78f) - gap * (count - 1)) / count
-                val baseY = size.height * 0.82f
-                val maxHeight = size.height * 0.48f
-                repeat(count) { index ->
-                    val sample = values.getOrNull(index * values.size / count) ?: 0f
-                    val idle = 0.035f + 0.025f * (0.5f + 0.5f * sin(phase * 2.1f + index * 0.17f))
-                    val level = if (playback.isPlaying) sample.coerceAtLeast(idle) else idle
-                    val barHeight = (maxHeight * (0.06f + level * 0.94f)).coerceAtLeast(3.dp.toPx())
-                    val x = (size.width - (count * barWidth + (count - 1) * gap)) / 2f + index * (barWidth + gap)
-                    drawRoundRect(
-                        brush = Brush.verticalGradient(
-                            listOf(Violet.copy(alpha = 0.9f), Coral, Coral.copy(alpha = 0.55f)),
-                            startY = baseY - barHeight,
-                            endY = baseY,
-                        ),
-                        topLeft = androidx.compose.ui.geometry.Offset(x, baseY - barHeight),
-                        size = androidx.compose.ui.geometry.Size(barWidth, barHeight),
-                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(barWidth / 2f),
-                    )
-                }
-            }
-
-            if (particlesEnabled) {
-                repeat(34) { index ->
-                    val seed = index.toFloat()
-                    val x = size.width * (0.08f + ((seed * 0.618f) % 0.84f))
-                    val drift = (phase * (0.12f + (index % 4) * 0.025f) + seed * 0.73f) % 1f
-                    val y = size.height * (1f - drift)
-                    val radius = (1.2f + (index % 3) * 0.55f).dp.toPx()
-                    drawCircle(
-                        color = if (index % 3 == 0) Violet.copy(alpha = 0.48f) else Coral.copy(alpha = 0.5f),
-                        radius = radius,
-                        center = androidx.compose.ui.geometry.Offset(x, y),
-                    )
-                }
-            }
-
-            if (!playback.isPlaying) {
-                drawCircle(
-                    color = Color.White.copy(alpha = 0.1f),
-                    radius = size.minDimension * 0.31f,
-                    center = center,
-                    style = Stroke(width = 1.dp.toPx(), cap = StrokeCap.Round),
-                )
-            }
-        }
-
-        Text(
-            text = "LIVE PREVIEW",
-            modifier = Modifier.align(Alignment.TopStart).padding(14.dp),
-            color = Color.White.copy(alpha = 0.66f),
-            fontSize = 10.sp,
-            fontWeight = FontWeight.SemiBold,
-            letterSpacing = 1.6.sp,
+private fun DrawScope.drawCircleBars(layer: Layer, b: SpectrumMapper.Bands) {
+    val cx = size.width * (layer.x / 100f)
+    val cy = size.height * (layer.y / 100f)
+    val r = minOf(size.width, size.height) * 0.22f
+    val n = layer.barCount
+    val bands = floatArrayOf(b.bass, b.lowMid, b.mid, b.upMid, b.presence, b.brill)
+    repeat(n) { i ->
+        val a = (i.toFloat() / n) * (Math.PI * 2).toFloat() - (Math.PI / 2).toFloat()
+        val v = bands[i % bands.size]
+        val inner = r
+        val outer = r + r * 0.5f * v * (layer.barLength / 100f)
+        drawLine(
+            color = Color(layer.colorPrimary),
+            start = Offset(cx + cos(a) * inner, cy + sin(a) * inner),
+            end = Offset(cx + cos(a) * outer, cy + sin(a) * outer),
+            strokeWidth = 4f
         )
-        Text(
-            text = if (playback.isPlaying) "● LIVE" else "READY",
-            modifier = Modifier.align(Alignment.TopEnd).padding(14.dp),
-            color = if (playback.isPlaying) Coral else Color.White.copy(alpha = 0.5f),
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 1.2.sp,
+    }
+}
+
+private fun DrawScope.drawWave(layer: Layer, b: SpectrumMapper.Bands) {
+    val span = size.width * 0.8f
+    val amp = size.height * 0.2f * (layer.barLength / 100f)
+    val cx = size.width / 2f
+    val cy = size.height * (layer.y / 100f)
+    val points = 100
+    val path = androidx.compose.ui.graphics.Path()
+    repeat(points) { i ->
+        val x = cx - span / 2f + span * i / points
+        val y = cy + sin(i * 0.3f + b.volume * 10f) * amp * b.volume
+        if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+    }
+    drawPath(path, Color(layer.colorPrimary), style = Stroke(width = 3f))
+}
+
+private fun DrawScope.drawDots(layer: Layer, b: SpectrumMapper.Bands) {
+    val span = size.width * 0.8f
+    val n = layer.barCount
+    val sl = span / n
+    val x0 = (size.width - span) / 2f
+    val y0 = size.height * (layer.y / 100f)
+    repeat(n) { i ->
+        val v = (b.bass + b.mid) / 2f
+        drawCircle(
+            color = Color(layer.colorPrimary),
+            radius = 4f + v * 10f,
+            center = Offset(x0 + i * sl + sl / 2f, y0)
         )
-        if (ElementType.TITLE in enabledTypes && playback.title != "No track selected") {
-            Text(
-                text = playback.title,
-                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 54.dp),
-                color = Color.White.copy(alpha = 0.9f),
-                fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-            )
-        }
+    }
+}
+
+private fun DrawScope.drawParticles(layer: Layer, b: SpectrumMapper.Bands) {
+    // Minimal deterministic particle representation for now.
+    val n = 30
+    val cx = size.width / 2f
+    val cy = size.height / 2f
+    repeat(n) { i ->
+        val a = i * 0.7f
+        val r = 80f + b.bass * 200f * (i % 3)
+        drawCircle(
+            color = Color(layer.colorPrimary).copy(alpha = 0.7f),
+            radius = 3f,
+            center = Offset(cx + cos(a) * r, cy + sin(a) * r)
+        )
+    }
+}
+
+private fun DrawScope.drawTextLayer(layer: Layer) {
+    // Placeholder: uses Compose's native Text via overlay in StudioScreen.
+    drawRect(
+        color = Color(layer.colorPrimary).copy(alpha = 0.2f),
+        topLeft = Offset(size.width * 0.3f, size.height * 0.4f),
+        size = Size(size.width * 0.4f, size.height * 0.1f)
+    )
+}
+
+private fun DrawScope.drawConcentric(layer: Layer, b: SpectrumMapper.Bands) {
+    val cx = size.width / 2f
+    val cy = size.height / 2f
+    repeat(5) { i ->
+        val r = 40f + i * 30f + b.bass * 50f
+        drawCircle(
+            color = Color(layer.colorPrimary).copy(alpha = 0.5f),
+            radius = r,
+            center = Offset(cx, cy),
+            style = Stroke(width = 3f)
+        )
     }
 }

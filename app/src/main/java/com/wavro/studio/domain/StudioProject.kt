@@ -2,29 +2,57 @@ package com.wavro.studio.domain
 
 import java.util.UUID
 
-enum class ElementType(val title: String, val description: String) {
-    BARS("Spectrum bars", "Audio-reactive frequency bars"),
-    RADIAL("Radial ring", "A circular audio pulse"),
-    PARTICLES("Particles", "Floating ambient particles"),
-    TITLE("Track title", "Show the current track title"),
-}
+enum class LayerType { BARS, CIRCLE, WAVE, DOTS, PARTICLES, TEXT, BACKGROUND, IMAGE, SHAPE, CONCENTRIC }
 
-data class ProjectElement(
+data class ReactiveRule(
     val id: String = UUID.randomUUID().toString(),
-    val type: ElementType,
-    val enabled: Boolean = true,
+    val source: String = "bass",        // bass, volume, sub, mid, upmid, brill
+    val property: String = "sy",        // sy, sx, opacity, glow, x, y
+    val inputMin: Float = 0f,
+    val inputMax: Float = 1f,
+    val outputMin: Float = 100f,
+    val outputMax: Float = 140f,
+    val enabled: Boolean = true
+)
+
+data class Layer(
+    val id: String = UUID.randomUUID().toString(),
+    val type: LayerType = LayerType.BARS,
+    val name: String = "Bars",
+    val x: Float = 50f,
+    val y: Float = 78f,
+    val scaleX: Float = 100f,
+    val scaleY: Float = 100f,
+    val rotation: Float = 0f,
+    val opacity: Float = 100f,
+    val colorPrimary: Int = 0xFFFFFFFF.toInt(),
+    val colorSecondary: Int = 0xFF6A6A75.toInt(),
+    val barCount: Int = 48,
+    val barThickness: Float = 70f,
+    val barLength: Float = 100f,
+    val cornerRadius: Float = 0f,
+    val glow: Float = 0f,
+    val reactiveRules: List<ReactiveRule> = emptyList(),
+    val visible: Boolean = true,
+    val locked: Boolean = false
+)
+
+data class SceneSettings(
+    val backgroundColor: Int = 0xFF000000.toInt(),
+    val cameraZoom: Float = 0f,
+    val vignette: Float = 0f,
+    val scanlines: Float = 0f,
+    val grain: Float = 0f,
+    val beatFlash: Float = 0f
 )
 
 data class StudioProject(
     val id: String = UUID.randomUUID().toString(),
-    val name: String = "Untitled Project",
-    val backgroundColor: Long = 0xFF0D0D12,
-    val elements: List<ProjectElement> = defaultElements(),
-)
-
-fun defaultElements() = listOf(
-    ProjectElement(type = ElementType.PARTICLES),
-    ProjectElement(type = ElementType.RADIAL),
-    ProjectElement(type = ElementType.BARS),
-    ProjectElement(type = ElementType.TITLE),
+    val name: String = "Untitled",
+    val layers: List<Layer> = listOf(
+        Layer(type = LayerType.BACKGROUND, name = "Background", colorPrimary = 0xFF000000.toInt()),
+        Layer(type = LayerType.BARS, name = "Bars")
+    ),
+    val scene: SceneSettings = SceneSettings(),
+    val lastModified: Long = System.currentTimeMillis()
 )

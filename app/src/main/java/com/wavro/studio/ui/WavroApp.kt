@@ -1,27 +1,28 @@
 package com.wavro.studio.ui
 
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.Color
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.wavro.studio.app.WavroApplication
 import com.wavro.studio.editor.StudioViewModel
 
-private val AudiovisColors = darkColorScheme(
-    primary = Color(0xFFD97757),
-    onPrimary = Color(0xFF262624),
-    secondary = Color(0xFFB0AEA5),
-    background = Color(0xFF262624),
-    surface = Color(0xFF30302E),
-    surfaceVariant = Color(0xFF454440),
-    onBackground = Color(0xFFFAF9F5),
-    onSurface = Color(0xFFFAF9F5),
-    onSurfaceVariant = Color(0xFFB0AEA5),
-)
-
 @Composable
-fun WavroApp(viewModel: StudioViewModel = viewModel()) {
-    MaterialTheme(colorScheme = AudiovisColors) {
-        StudioScreen(viewModel)
-    }
+fun WavroApp(app: WavroApplication) {
+    val vm: StudioViewModel = viewModel(factory = object : androidx.lifecycle.ViewModelProvider.Factory {
+        @Suppress("UNCHECKED_CAST")
+        override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T =
+            StudioViewModel(app) as T
+    })
+
+    val project by vm.project.collectAsState()
+    val playback by vm.playback.collectAsState()
+    val bands by vm.bands.collectAsState()
+
+    StudioScreen(
+        vm = vm,
+        projectState = vm.project,
+        playback = vm.playback,
+        bands = vm.bands
+    )
 }

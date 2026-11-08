@@ -1,93 +1,80 @@
 package com.wavro.studio.editor
 
-import android.app.Application
 import android.net.Uri
-import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.wavro.studio.app.WavroApplication
 import com.wavro.studio.audio.AudioEngine
 import com.wavro.studio.audio.PlaybackState
-import com.wavro.studio.domain.ElementType
-import com.wavro.studio.domain.ProjectElement
+import com.wavro.studio.domain.Layer
+import com.wavro.studio.domain.LayerType
 import com.wavro.studio.domain.StudioProject
-import com.wavro.studio.projects.ProjectRepository
+import com.wavro.studio.visualization.SpectrumMapper
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 
-class StudioViewModel(application: Application) : AndroidViewModel(application) {
-    private val audioEngine = AudioEngine(application)
-    private val repository = ProjectRepository(application)
+class StudioViewModel(private val app: WavroApplication) : ViewModel() {
 
-    private val mutableProject = MutableStateFlow(repository.current())
-    val project: StateFlow<StudioProject> = mutableProject.asStateFlow()
-    val playback: StateFlow<PlaybackState> = audioEngine.state
+    private val repo = app.repository
+    private val engine = AudioEngine(app)
 
-    private val mutableSavedProjects = MutableStateFlow(repository.all())
-    val savedProjects: StateFlow<List<StudioProject>> = mutableSavedProjects.asStateFlow()
+    private val _project = MutableStateFlow(repo.loadLast() ?: StudioProject())
+    val project: StateFlow<StudioProject> = _project.asStateFlow()
 
-    fun openAudio(uri: Uri) = audioEngine.open(uri)
-    fun startDemo() = audioEngine.startDemo()
-    fun togglePlayback() = audioEngine.togglePlayback()
-    fun seekTo(positionMs: Long) = audioEngine.seekTo(positionMs)
-    fun refreshVisualization() = audioEngine.refreshVisualization()
+    val playback: StateFlow<PlaybackState> = engine.state
 
-    fun updateProjectName(name: String) {
-        mutableProject.value = mutableProject.value.copy(name = name)
-    }
+    private val mapper = SpectrumMapper()
+    private val _bands = MutableStateFlow(SpectrumMapper.Bands())
+    val bands: StateFlow<SpectrumMapper.Bands> = _bands.asStateFlow()
 
-    fun saveProject() {
-        repository.save(mutableProject.value)
-        refreshProjects()
-    }
-
-    fun newProject() {
-        val project = StudioProject(name = "Untitled Project ${mutableSavedProjects.value.size + 1}")
-        mutableProject.value = project
-        repository.save(project)
-        refreshProjects()
-    }
-
-    fun selectProject(project: StudioProject) {
-        mutableProject.value = project
-        repository.select(project)
-    }
-
-    fun deleteProject(projectId: String) {
-        repository.delete(projectId)
-        if (mutableProject.value.id == projectId) {
-            val next = repository.all().firstOrNull() ?: StudioProject()
-            mutableProject.value = next
-            repository.save(next)
+    init {
+        // Poll the visualizer at ~60Hz on a coroutine.
+        viewModelScope.launch {
+            while (true) {
+                _bands.value = mapper.mapFft(engine.fftSnapshot())
+                kotlinx.coroutines.delay(16)
+            }
         }
-        refreshProjects()
     }
 
-    fun addElement(type: ElementType) {
-        val element = ProjectElement(type = type)
-        mutableProject.value = mutableProject.value.copy(
-            elements = mutableProject.value.elements + element,
+    fun loadTrack(uri: Uri, name: String?) {
+        engine.load(uri, name)
+        _project.value = _project.value.copy(
+            layers = _project.value.layers.map { l ->
+                if (l.type == LayerType.BARS) l else l
+            }
         )
     }
 
-    fun setElementEnabled(elementId: String, enabled: Boolean) {
-        mutableProject.value = mutableProject.value.copy(
-            elements = mutableProject.value.elements.map {
-                if (it.id == elementId) it.copy(enabled = enabled) else it
-            },
-        )
+    fun togglePlayback() = engine.toggle()
+    fun seekTo(ms: Long) = engine.seekTo(ms)
+
+    fun addLayer(type: LayerType) {
+        val layer = Layer(type = type, name = type.name.lowercase().replaceFirstChar { it.uppercase() })
+        _project.value = _project.value.copy(layers = _project.value.layers + layer)
+        persist()
     }
 
-    fun removeElement(elementId: String) {
-        mutableProject.value = mutableProject.value.copy(
-            elements = mutableProject.value.elements.filterNot { it.id == elementId },
+    fun updateLayer(layer: Layer) {
+        _project.value = _project.value.copy(
+            layers = _project.value.layers.map { if (it.id == layer.id) layer else it }
         )
+        persist()
     }
 
-    private fun refreshProjects() {
-        mutableSavedProjects.value = repository.all()
+    fun deleteLayer(id: String) {
+        _project.value = _project.value.copy(layers = _project.value.layers.filter { it.id != id })
+        persist()
+    }
+
+    private fun persist() {
+        viewModelScope.launch { repo.save(_project.value.copy(lastModified = System.currentTimeMillis())) }
     }
 
     override fun onCleared() {
-        audioEngine.release()
         super.onCleared()
+        engine.release()
     }
 }
