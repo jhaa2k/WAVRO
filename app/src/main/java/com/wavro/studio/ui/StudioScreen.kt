@@ -1,9 +1,7 @@
 package com.wavro.studio.ui
 
-import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.compose.foundation.*
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -48,9 +46,9 @@ fun StudioScreen(
     var showSheet by remember { mutableStateOf(false) }
     var selectedTab by remember { mutableIntStateOf(0) }
 
-    val picker = rememberLauncherForActivityResult(
+    val picker = androidx.activity.compose.rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
-    ) { uri: Uri? -> uri?.let { vm.loadTrack(it, null) } }
+    ) { uri: android.net.Uri? -> uri?.let { vm.loadTrack(it, null) } }
 
     Scaffold(
         containerColor = BG,

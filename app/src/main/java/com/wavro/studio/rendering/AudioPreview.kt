@@ -22,7 +22,6 @@ fun AudioPreview(
     modifier: Modifier = Modifier
 ) {
     Canvas(modifier = modifier.fillMaxSize()) {
-        // Draw dark canvas background
         drawRect(Color.Black)
 
         layers.filter { it.visible }.forEach { layer ->
@@ -47,7 +46,7 @@ fun AudioPreview(
 private fun DrawScope.drawBars(layer: Layer, b: SpectrumMapper.Bands) {
     val span = size.width * 0.8f
     val len = size.height * 0.35f * (layer.barLength / 100f)
-    val n = layer.barCount
+    val n = layer.barCount.coerceAtLeast(1)
     val sl = span / n
     val bw = sl * (layer.barThickness / 100f)
     val x0 = (size.width - span) / 2f
@@ -68,7 +67,7 @@ private fun DrawScope.drawCircleBars(layer: Layer, b: SpectrumMapper.Bands) {
     val cx = size.width * (layer.x / 100f)
     val cy = size.height * (layer.y / 100f)
     val r = minOf(size.width, size.height) * 0.22f
-    val n = layer.barCount
+    val n = layer.barCount.coerceAtLeast(1)
     val bands = floatArrayOf(b.bass, b.lowMid, b.mid, b.upMid, b.presence, b.brill)
     repeat(n) { i ->
         val a = (i.toFloat() / n) * (Math.PI * 2).toFloat() - (Math.PI / 2).toFloat()
@@ -77,8 +76,8 @@ private fun DrawScope.drawCircleBars(layer: Layer, b: SpectrumMapper.Bands) {
         val outer = r + r * 0.5f * v * (layer.barLength / 100f)
         drawLine(
             color = Color(layer.colorPrimary),
-            start = Offset(cx + cos(a) * inner, cy + sin(a) * inner),
-            end = Offset(cx + cos(a) * outer, cy + sin(a) * outer),
+            start = Offset(cx + cos(a.toDouble()).toFloat() * inner, cy + sin(a.toDouble()).toFloat() * inner),
+            end = Offset(cx + cos(a.toDouble()).toFloat() * outer, cy + sin(a.toDouble()).toFloat() * outer),
             strokeWidth = 4f
         )
     }
@@ -93,7 +92,8 @@ private fun DrawScope.drawWave(layer: Layer, b: SpectrumMapper.Bands) {
     val path = androidx.compose.ui.graphics.Path()
     repeat(points) { i ->
         val x = cx - span / 2f + span * i / points
-        val y = cy + sin(i * 0.3f + b.volume * 10f) * amp * b.volume
+        val phase = i * 0.3f + b.volume * 10f
+        val y = cy + sin(phase.toDouble()).toFloat() * amp * b.volume
         if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
     }
     drawPath(path, Color(layer.colorPrimary), style = Stroke(width = 3f))
@@ -101,7 +101,7 @@ private fun DrawScope.drawWave(layer: Layer, b: SpectrumMapper.Bands) {
 
 private fun DrawScope.drawDots(layer: Layer, b: SpectrumMapper.Bands) {
     val span = size.width * 0.8f
-    val n = layer.barCount
+    val n = layer.barCount.coerceAtLeast(1)
     val sl = span / n
     val x0 = (size.width - span) / 2f
     val y0 = size.height * (layer.y / 100f)
@@ -116,7 +116,6 @@ private fun DrawScope.drawDots(layer: Layer, b: SpectrumMapper.Bands) {
 }
 
 private fun DrawScope.drawParticles(layer: Layer, b: SpectrumMapper.Bands) {
-    // Minimal deterministic particle representation for now.
     val n = 30
     val cx = size.width / 2f
     val cy = size.height / 2f
@@ -126,13 +125,12 @@ private fun DrawScope.drawParticles(layer: Layer, b: SpectrumMapper.Bands) {
         drawCircle(
             color = Color(layer.colorPrimary).copy(alpha = 0.7f),
             radius = 3f,
-            center = Offset(cx + cos(a) * r, cy + sin(a) * r)
+            center = Offset(cx + cos(a.toDouble()).toFloat() * r, cy + sin(a.toDouble()).toFloat() * r)
         )
     }
 }
 
 private fun DrawScope.drawTextLayer(layer: Layer) {
-    // Placeholder: uses Compose's native Text via overlay in StudioScreen.
     drawRect(
         color = Color(layer.colorPrimary).copy(alpha = 0.2f),
         topLeft = Offset(size.width * 0.3f, size.height * 0.4f),
