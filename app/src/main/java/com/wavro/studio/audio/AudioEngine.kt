@@ -2,7 +2,6 @@ package com.wavro.studio.audio
 
 import android.content.Context
 import android.media.audiofx.Visualizer
-import android.net.Uri
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
@@ -13,12 +12,13 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlin.math.sqrt
 
 class AudioEngine(context: Context) {
     private val _state = MutableStateFlow(PlaybackState())
     val state: StateFlow<PlaybackState> = _state.asStateFlow()
 
-    // Exposes FFT data (0.0 to 1.0) to the UI
+    // 64 bands of normalized FFT data (0.0 to 1.0)
     private val _fftData = MutableStateFlow(FloatArray(64))
     val fftData: StateFlow<FloatArray> = _fftData.asStateFlow()
 
@@ -48,27 +48,25 @@ class AudioEngine(context: Context) {
         try {
             @Suppress("DEPRECATION")
             visualizer = Visualizer(player.audioSessionId).apply {
-                captureSize = Visualizer.getCaptureSizeRange()[1] // Max size
+                captureSize = Visualizer.getCaptureSizeRange()[1]
                 setDataCaptureListener(object : Visualizer.OnDataCaptureListener {
                     override fun onWaveFormDataCapture(v: Visualizer?, wf: ByteArray?, rate: Int) {}
-                    
                     override fun onFftDataCapture(v: Visualizer?, fft: ByteArray?, rate: Int) {
-                        if (fft != null) {
-                            // Convert raw FFT bytes to a normalized Float array
+                        if (fft != null && fft.isNotEmpty()) {
                             val bands = FloatArray(64)
                             val chunkSize = fft.size / 64
                             for (i in 0 until 64) {
                                 var sum = 0f
                                 for (j in 0 until chunkSize) {
-                                    val index = (i * chunkSize + j) * 2 // Real/Imaginary pairs
+                                    val index = (i * chunkSize + j) * 2
                                     if (index + 1 < fft.size) {
                                         val real = fft[index].toFloat()
                                         val imag = fft[index + 1].toFloat()
-                                        sum += kotlin.math.sqrt(real * real + imag * imag)
+                                        sum += sqrt(real * real + imag * imag)
                                     }
                                 }
-                                // Normalize roughly between 0.0 and 1.0
-                                bands[i] = (sum / chunkSize / 128f).coerceIn(0f, 1f)
+                                // Normalize: / 255.0 and multiply by sensitivity
+                                bands[i] = ((sum / chunkSize) / 128f).coerceIn(0f, 1f)
                             }
                             _fftData.value = bands
                         }
@@ -77,13 +75,11 @@ class AudioEngine(context: Context) {
                 enabled = true
             }
         } catch (e: Exception) {
-            // Visualizer fails on some devices/emulators
+            e.printStackTrace()
         }
     }
 
-    private fun stopVisualizer() {
-        visualizer?.enabled = false
-    }
+    private fun stopVisualizer() { visualizer?.enabled = false }
 
     private fun startPositionTracker() {
         scope.launch {
@@ -97,17 +93,7 @@ class AudioEngine(context: Context) {
         }
     }
 
-    fun togglePlayPause() {
-        if (player.isPlaying) player.pause() else player.play()
-    }
-
-    fun seekTo(ms: Long) {
-        player.seekTo(ms)
-        _state.value = _state.value.copy(positionMs = ms)
-    }
-
-    fun release() {
-        visualizer?.release()
-        player.release()
-    }
+    fun togglePlayPause() { if (player.isPlaying) player.pause() else player.play() }
+    fun seekTo(ms: Long) { player.seekTo(ms); _state.value = _state.value.copy(positionMs = ms) }
+    fun release() { visualizer?.release(); player.release() }
 }
