@@ -9,6 +9,7 @@ import com.wavro.studio.editor.StudioViewModel
 
 @Composable
 fun WavroApp(app: WavroApplication) {
+    // Initialize the ViewModel and pass the Application context to it
     val vm: StudioViewModel = viewModel(factory = object : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -16,5 +17,6 @@ fun WavroApp(app: WavroApplication) {
         }
     })
 
+    // Launch the main UI screen
     StudioScreen(vm = vm)
 }
