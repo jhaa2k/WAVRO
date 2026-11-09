@@ -2,7 +2,6 @@ package com.wavro.studio.editor
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
-import androidx.lifecycle.viewModelScope
 import com.wavro.studio.audio.AudioEngine
 import com.wavro.studio.audio.Track
 import com.wavro.studio.domain.StudioProject
