@@ -23,6 +23,7 @@ fun AudioPreview(layers: List<Layer>, fftData: FloatArray, modifier: Modifier = 
             val cx = size.width * (layer.x / 100f)
             val cy = size.height * (layer.y / 100f)
             
+            // Apply Rotation and Scale
             rotate(layer.rotation, pivot = Offset(cx, cy)) {
                 scale(layer.scale / 100f, pivot = Offset(cx, cy)) {
                     when (layer.type) {
@@ -47,6 +48,7 @@ private fun DrawScope.drawSpectrumBars(layer: Layer, fft: FloatArray, cx: Float,
 
     for (i in 0 until barCount) {
         val fftIndex = (i.toFloat() / barCount * fft.size).toInt().coerceIn(0, fft.size - 1)
+        // Minimum height of 4f so bars are always visible
         val amplitude = (fft[fftIndex] * layer.spectrum.sensitivity).coerceIn(0.01f, 1f)
         val barHeight = (maxHeight * amplitude).coerceAtLeast(4f)
 
@@ -82,7 +84,7 @@ private fun DrawScope.drawText(layer: Layer, cx: Float, cy: Float) {
     drawContext.canvas.nativeCanvas.apply {
         val paint = android.graphics.Paint().apply {
             color = layer.colorPrimary
-            textSize = layer.text.textSize * density * 2f // Scaled up for visibility
+            textSize = layer.text.textSize * density * 2f
             isAntiAlias = true
             textAlign = android.graphics.Paint.Align.CENTER
             typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, if (layer.text.isBold) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
