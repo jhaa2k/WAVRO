@@ -5,15 +5,14 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -34,7 +33,7 @@ private val AC = Color(0xFFD97757)
 @Composable
 fun StudioScreen(vm: StudioViewModel) {
     var currentTab by remember { mutableIntStateOf(0) }
-    var showEditor by remember { mutableStateOf(false) }
+    var showSheet by remember { mutableStateOf(false) }
     
     val playbackState by vm.playback.collectAsState()
     val fftData by vm.fftData.collectAsState()
@@ -45,30 +44,33 @@ fun StudioScreen(vm: StudioViewModel) {
         containerColor = BG,
         topBar = {
             TopAppBar(
-                title = { Text("WAVRO STUDIO", color = TX, fontWeight = FontWeight.ExtraBold) },
+                title = { Text("AUDIOVIS PRO", color = TX, fontWeight = FontWeight.ExtraBold) },
                 actions = {
-                    if (currentTab == 2) {
-                        IconButton(onClick = { showEditor = !showEditor }) {
-                            Icon(Icons.Default.Edit, "Editor", tint = AC)
-                        }
-                    }
+                    IconButton(onClick = {}) { Icon(Icons.Default.Undo, null, tint = TX) }
+                    IconButton(onClick = {}) { Icon(Icons.Default.Redo, null, tint = TX) }
+                    IconButton(onClick = {}) { Icon(Icons.Default.Tune, null, tint = TX) }
+                    IconButton(onClick = {}) { Icon(Icons.Default.Settings, null, tint = TX) }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = BG)
             )
         },
         bottomBar = {
-            NavigationBar(containerColor = PN) {
+            NavigationBar(containerColor = BG) {
                 val tabs = listOf(
-                    "Library" to Icons.Default.LibraryMusic,
-                    "Playlists" to Icons.Default.QueueMusic,
-                    "Visualizer" to Icons.Default.GraphicEq,
-                    "Equalizer" to Icons.Default.Equalizer,
-                    "Settings" to Icons.Default.Settings
+                    "Media" to Icons.Default.MusicNote,
+                    "Layers" to Icons.Default.Layers,
+                    "Presets" to Icons.Default.FavoriteBorder,
+                    "Audio" to Icons.Default.GraphicEq,
+                    "Scene" to Icons.Default.Image,
+                    "Export" to Icons.Default.Download
                 )
                 tabs.forEachIndexed { index, (label, icon) ->
                     NavigationBarItem(
-                        selected = currentTab == index,
-                        onClick = { currentTab = index },
+                        selected = currentTab == index && showSheet,
+                        onClick = { 
+                            currentTab = index
+                            showSheet = true 
+                        },
                         icon = { Icon(icon, contentDescription = label) },
                         label = { Text(label, fontSize = 10.sp) },
                         colors = NavigationBarItemDefaults.colors(selectedIconColor = AC, selectedTextColor = AC, unselectedIconColor = DM, unselectedTextColor = DM)
@@ -77,234 +79,80 @@ fun StudioScreen(vm: StudioViewModel) {
             }
         }
     ) { padding ->
-        Box(modifier = Modifier.padding(padding).fillMaxSize()) {
-            when (currentTab) {
-                0 -> LibraryTab(tracks) { vm.playTrack(it); currentTab = 2 }
-                1 -> PlaylistsTab()
-                2 -> VisualizerTab(project.layers, fftData, playbackState, vm)
-                3 -> EqualizerTab(vm)
-                4 -> SettingsTab(vm)
+        Column(modifier = Modifier.padding(padding).fillMaxSize()) {
+            // Main Preview Window
+            Box(modifier = Modifier.weight(1f).fillMaxWidth().padding(16.dp).clip(RoundedCornerShape(12.dp))) {
+                AudioPreview(layers = project.layers, fftData = fftData)
+                Text("PREVIEW 1280x720", color = TX, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(12.dp))
             }
-
-            if (showEditor) {
-                ModalBottomSheet(onDismissRequest = { showEditor = false }, containerColor = PN, modifier = Modifier.fillMaxHeight(0.85f)) {
-                    VisualizerEditorTab(project.layers, vm)
-                }
+            
+            // Playback Controls
+            Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(playbackState.currentTrack?.title ?: "No Track", color = TX, fontSize = 12.sp)
+                Text(formatTime(playbackState.positionMs) + " / " + formatTime(playbackState.durationMs), color = DM, fontSize = 12.sp)
             }
-        }
-    }
-}
-
-@Composable
-fun LibraryTab(tracks: List<com.wavro.studio.audio.Track>, onPlay: (com.wavro.studio.audio.Track) -> Unit) {
-    var searchQuery by remember { mutableStateOf("") }
-    val filteredTracks = tracks.filter { 
-        it.title.contains(searchQuery, ignoreCase = true) || 
-        it.artist.contains(searchQuery, ignoreCase = true) 
-    }
-
-    Column(modifier = Modifier.fillMaxSize()) {
-        OutlinedTextField(
-            value = searchQuery,
-            onValueChange = { searchQuery = it },
-            placeholder = { Text("Search title, artist, album...", color = DM) },
-            leadingIcon = { Icon(Icons.Default.Search, null, tint = DM) },
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
-            shape = RoundedCornerShape(12.dp),
-            colors = OutlinedTextFieldDefaults.colors(focusedTextColor = TX, unfocusedTextColor = TX, focusedBorderColor = AC, unfocusedBorderColor = DM)
-        )
-        LazyColumn(modifier = Modifier.fillMaxSize()) {
-            items(filteredTracks) { track ->
-                ListItem(
-                    headlineContent = { Text(track.title, color = TX, fontWeight = FontWeight.Medium) },
-                    supportingContent = { Text(track.artist, color = DM) },
-                    leadingContent = { Icon(Icons.Default.MusicNote, null, tint = AC) },
-                    trailingContent = { Icon(Icons.Default.MoreVert, null, tint = DM) },
-                    modifier = Modifier.clickable { onPlay(track) }
-                )
-                HorizontalDivider(color = PN)
-            }
-        }
-    }
-}
-
-@Composable
-fun PlaylistsTab() {
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        Text("Playlists & Queue", color = TX, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(16.dp))
-        val options = listOf("Favorites", "Recently Played", "All Songs", "Folders", "Queue")
-        options.forEach { option ->
-            Row(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp).clickable { }, verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.List, null, tint = AC)
-                Spacer(Modifier.width(16.dp))
-                Text(option, color = TX, fontSize = 16.sp)
-            }
-        }
-    }
-}
-
-@Composable
-fun VisualizerTab(layers: List<Layer>, fft: FloatArray, playbackState: com.wavro.studio.audio.PlaybackState, vm: StudioViewModel) {
-    Column(modifier = Modifier.fillMaxSize()) {
-        Box(modifier = Modifier.weight(1f).fillMaxWidth().background(Color.Black)) {
-            AudioPreview(layers = layers, fftData = fft)
-        }
-        
-        Row(modifier = Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = {}) { Icon(Icons.Default.Shuffle, null, tint = DM) }
-            IconButton(onClick = {}) { Icon(Icons.Default.SkipPrevious, null, tint = TX) }
-            IconButton(onClick = { vm.togglePlayback() }) {
-                Icon(if (playbackState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, "Play", tint = TX, modifier = Modifier.size(48.dp))
-            }
-            IconButton(onClick = {}) { Icon(Icons.Default.SkipNext, null, tint = TX) }
-            IconButton(onClick = {}) { Icon(Icons.Default.Repeat, null, tint = DM) }
-        }
-        
-        Text(playbackState.currentTrack?.title ?: "No track selected", color = TX, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), maxLines = 1)
-        Text(playbackState.currentTrack?.artist ?: "Unknown Artist", color = DM, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 16.dp))
-        
-        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(formatTime(playbackState.positionMs), color = DM, fontSize = 10.sp)
             Slider(
                 value = playbackState.positionMs.toFloat(),
                 onValueChange = { vm.seekTo(it.toLong()) },
                 valueRange = 0f..playbackState.durationMs.toFloat().coerceAtLeast(1f),
-                colors = SliderDefaults.colors(thumbColor = AC, activeTrackColor = AC),
-                modifier = Modifier.weight(1f).padding(horizontal = 8.dp)
+                colors = SliderDefaults.colors(thumbColor = Color.Transparent, activeTrackColor = AC)
             )
-            Text(formatTime(playbackState.durationMs), color = DM, fontSize = 10.sp)
-        }
-    }
-}
-
-@Composable
-fun EqualizerTab(vm: StudioViewModel) {
-    val eqBands by vm.eqBands.collectAsState()
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Text("Hardware Equalizer", color = TX, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-        Text("Preset: Custom", color = DM, fontSize = 12.sp, modifier = Modifier.padding(vertical = 8.dp))
-        
-        if (eqBands.isEmpty()) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("Play a track to enable the equalizer.", color = DM) }
-        } else {
-            Row(modifier = Modifier.fillMaxWidth().weight(1f).padding(vertical = 16.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
-                eqBands.forEachIndexed { index, level ->
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                        Text("${(level / 100).toInt()}dB", color = DM, fontSize = 10.sp)
-                        Spacer(Modifier.height(8.dp))
-                        Slider(
-                            value = level.toFloat(),
-                            onValueChange = { vm.setEqBand(index.toShort(), it.roundToInt().toShort()) },
-                            valueRange = -1500f..1500f,
-                            modifier = Modifier.height(200.dp).width(40.dp),
-                            colors = SliderDefaults.colors(thumbColor = AC, activeTrackColor = AC)
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        Text("B$index", color = DM, fontSize = 10.sp)
-                    }
+            Row(modifier = Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = {}) { Icon(Icons.Default.Shuffle, null, tint = DM) }
+                IconButton(onClick = {}) { Icon(Icons.Default.SkipPrevious, null, tint = TX) }
+                Box(modifier = Modifier.size(64.dp).clip(RoundedCornerShape(50)).background(TX).clickable { vm.togglePlayback() }, contentAlignment = Alignment.Center) {
+                    Icon(if (playbackState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, null, tint = BG, modifier = Modifier.size(32.dp))
                 }
+                IconButton(onClick = {}) { Icon(Icons.Default.SkipNext, null, tint = TX) }
+                IconButton(onClick = {}) { Icon(Icons.Default.Repeat, null, tint = DM) }
+            }
+        }
+    }
+
+    if (showSheet) {
+        ModalBottomSheet(onDismissRequest = { showSheet = false }, containerColor = PN) {
+            when (currentTab) {
+                0 -> MediaTab(tracks) { vm.playTrack(it); showSheet = false }
+                1 -> LayersTab(project.layers, vm)
+                2 -> PresetsTab()
+                3 -> AudioTab(vm)
+                4 -> SceneTab()
+                5 -> ExportTab(vm)
             }
         }
     }
 }
 
 @Composable
-fun SettingsTab(vm: StudioViewModel) {
-    // FIXED: This now collects the correct state from the ViewModel
-    val sleepTimer by vm.sleepTimerRemaining.collectAsState()
-    val isExporting by vm.isExporting.collectAsState()
-    val exportProgress by vm.exportProgress.collectAsState()
-    val exportStatus by vm.exportStatus.collectAsState()
-
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp).verticalScroll(rememberScrollState())) {
-        Text("Settings", color = TX, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(16.dp))
-        
-        Text("Sleep Timer", color = TX, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-        if (sleepTimer != null) {
-            val m = sleepTimer!! / 60
-            val s = sleepTimer!! % 60
-            Text("Pausing in $m:$s", color = AC, fontSize = 12.sp, modifier = Modifier.padding(vertical = 4.dp))
-            Button(onClick = { vm.cancelSleepTimer() }, colors = ButtonDefaults.buttonColors(containerColor = Color.Red)) { Text("Cancel Timer") }
-        } else {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 4.dp)) {
-                Button(onClick = { vm.startSleepTimer(15) }, colors = ButtonDefaults.buttonColors(containerColor = PN)) { Text("15m", color = TX) }
-                Button(onClick = { vm.startSleepTimer(30) }, colors = ButtonDefaults.buttonColors(containerColor = PN)) { Text("30m", color = TX) }
-                Button(onClick = { vm.startSleepTimer(60) }, colors = ButtonDefaults.buttonColors(containerColor = PN)) { Text("60m", color = TX) }
-            }
+fun MediaTab(tracks: List<com.wavro.studio.audio.Track>, onPlay: (com.wavro.studio.audio.Track) -> Unit) {
+    Column(modifier = Modifier.padding(16.dp)) {
+        Text("Import", color = DM, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        Button(onClick = {}, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), colors = ButtonDefaults.buttonColors(containerColor = BG)) {
+            Text("Choose audio files", color = TX)
         }
-        
-        Spacer(Modifier.height(24.dp))
-        HorizontalDivider(color = PN)
-        Spacer(Modifier.height(16.dp))
-        
-        Text("Video Export", color = TX, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-        Text("Output: 1080x1920 (MP4) @ 30fps", color = DM, fontSize = 12.sp, modifier = Modifier.padding(vertical = 4.dp))
-        
-        if (isExporting) {
-            LinearProgressIndicator(progress = { exportProgress }, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), color = AC)
-            Text(exportStatus, color = AC, fontSize = 12.sp)
-        } else {
-            Button(onClick = { vm.exportVideo() }, colors = ButtonDefaults.buttonColors(containerColor = AC), modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-                Icon(Icons.Default.Movie, null)
-                Spacer(Modifier.width(8.dp))
-                Text("Start Render")
-            }
-            if (exportStatus.isNotEmpty()) { Text(exportStatus, color = DM, fontSize = 10.sp) }
+        Text("Queue", color = DM, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 16.dp))
+        tracks.forEach { track ->
+            ListItem(
+                headlineContent = { Text(track.title, color = AC) },
+                modifier = Modifier.clickable { onPlay(track) }
+            )
         }
-        
-        Spacer(Modifier.height(24.dp))
-        HorizontalDivider(color = PN)
-        Spacer(Modifier.height(16.dp))
-        
-        Text("Appearance", color = TX, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-        ListItem(headlineContent = { Text("Theme", color = TX) }, trailingContent = { Text("Claude Dark", color = DM) })
-        ListItem(headlineContent = { Text("Always Hide App Logo", color = TX) }, trailingContent = { Switch(checked = false, onCheckedChange = {}) })
     }
 }
 
 @Composable
-fun VisualizerEditorTab(layers: List<Layer>, vm: StudioViewModel) {
-    val selectedId by vm.selectedLayerId.collectAsState()
-    val selectedLayer = layers.find { it.id == selectedId }
-
-    Column(modifier = Modifier.padding(16.dp).verticalScroll(rememberScrollState())) {
-        Text("Layer Editor", color = TX, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-        
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 8.dp)) {
-            Button(onClick = { vm.addLayer(LayerType.BARS) }, colors = ButtonDefaults.buttonColors(containerColor = AC)) { Text("+ Bars") }
-            Button(onClick = { vm.addLayer(LayerType.CIRCLE) }, colors = ButtonDefaults.buttonColors(containerColor = AC)) { Text("+ Circle") }
-            Button(onClick = { vm.addLayer(LayerType.TEXT) }, colors = ButtonDefaults.buttonColors(containerColor = AC)) { Text("+ Text") }
+fun LayersTab(layers: List<Layer>, vm: StudioViewModel) {
+    Column(modifier = Modifier.padding(16.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Layers", color = TX, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.weight(1f))
+            Button(onClick = { vm.addLayer(LayerType.BARS) }, colors = ButtonDefaults.buttonColors(containerColor = AC)) { Text("Add layer") }
         }
-
-        LazyColumn(modifier = Modifier.heightIn(max = 200.dp)) {
+        LazyColumn(modifier = Modifier.padding(top = 16.dp)) {
             items(layers) { layer ->
-                Row(modifier = Modifier.fillMaxWidth().clickable { vm.selectLayer(layer.id) }.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(if (layer.type == LayerType.TEXT) Icons.Default.TextFields else Icons.Default.BarChart, null, tint = if (layer.id == selectedId) AC else TX)
-                    Spacer(Modifier.width(8.dp))
-                    Text(layer.name, color = if (layer.id == selectedId) AC else TX, modifier = Modifier.weight(1f))
-                    IconButton(onClick = { vm.deleteLayer(layer.id) }) { Icon(Icons.Default.Delete, null, tint = Color.Red) }
-                }
-            }
-        }
-
-        if (selectedLayer != null) {
-            HorizontalDivider(color = DM.copy(alpha = 0.2f), modifier = Modifier.padding(vertical = 8.dp))
-            Text("Properties: ${selectedLayer.name}", color = TX, fontWeight = FontWeight.Bold)
-            
-            SliderRow("X Position", selectedLayer.x, 0f..100f) { vm.updateLayer(selectedLayer.copy(x = it)) }
-            SliderRow("Y Position", selectedLayer.y, 0f..100f) { vm.updateLayer(selectedLayer.copy(y = it)) }
-            SliderRow("Scale", selectedLayer.scale, 10f..300f) { vm.updateLayer(selectedLayer.copy(scale = it)) }
-            SliderRow("Rotation", selectedLayer.rotation, 0f..360f) { vm.updateLayer(selectedLayer.copy(rotation = it)) }
-            
-            if (selectedLayer.type == LayerType.TEXT) {
-                OutlinedTextField(
-                    value = selectedLayer.text.text,
-                    onValueChange = { vm.updateLayer(selectedLayer.copy(text = selectedLayer.text.copy(text = it))) },
-                    label = { Text("Text Content") },
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                    colors = OutlinedTextFieldDefaults.colors(focusedTextColor = TX, unfocusedTextColor = TX)
+                ListItem(
+                    headlineContent = { Text(layer.name, color = TX) },
+                    leadingContent = { Icon(Icons.Default.Layers, null, tint = AC) }
                 )
             }
         }
@@ -312,10 +160,52 @@ fun VisualizerEditorTab(layers: List<Layer>, vm: StudioViewModel) {
 }
 
 @Composable
-fun SliderRow(label: String, value: Float, range: ClosedFloatingPointRange<Float>, onValueChange: (Float) -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
-        Text(label, color = DM, modifier = Modifier.width(80.dp), fontSize = 12.sp)
-        Slider(value = value, onValueChange = onValueChange, valueRange = range, modifier = Modifier.weight(1f), colors = SliderDefaults.colors(thumbColor = AC, activeTrackColor = AC))
+fun PresetsTab() {
+    Column(modifier = Modifier.padding(16.dp)) {
+        Text("Presets", color = TX, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+        val presets = listOf("Classic Vertical", "Circular Pulse", "Line Wave", "Neon Bars")
+        presets.forEach { name ->
+            ListItem(headlineContent = { Text(name, color = TX) }, trailingContent = { Icon(Icons.Default.FavoriteBorder, null, tint = DM) })
+        }
+    }
+}
+
+@Composable
+fun AudioTab(vm: StudioViewModel) {
+    Column(modifier = Modifier.padding(16.dp)) {
+        Text("Audio", color = TX, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+        val sections = listOf("Playback", "Equalizer", "Effects", "Analysis & Beat", "Modulators (LFO)")
+        sections.forEach { name ->
+            Card(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), colors = CardDefaults.cardColors(containerColor = BG)) {
+                Text(name, color = TX, fontWeight = FontWeight.Bold, modifier = Modifier.padding(16.dp))
+            }
+        }
+    }
+}
+
+@Composable
+fun SceneTab() {
+    Column(modifier = Modifier.padding(16.dp)) {
+        Text("Scene", color = TX, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+        Text("-- Custom --", color = DM, modifier = Modifier.padding(vertical = 8.dp))
+        val settings = listOf("Background", "Camera zoom", "Vignette", "Scanlines", "Film grain", "Beat flash")
+        settings.forEach { name ->
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
+                Text(name, color = DM, modifier = Modifier.width(120.dp), fontSize = 12.sp)
+                Slider(value = 0f, onValueChange = {}, modifier = Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+@Composable
+fun ExportTab(vm: StudioViewModel) {
+    Column(modifier = Modifier.padding(16.dp)) {
+        Text("Export", color = TX, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+        Text("Aspect: 16:9  Quality: 2160p", color = DM, modifier = Modifier.padding(vertical = 8.dp))
+        Button(onClick = { vm.exportVideo() }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = AC)) {
+            Text("Export Video")
+        }
     }
 }
 
