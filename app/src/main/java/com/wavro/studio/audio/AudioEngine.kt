@@ -1,18 +1,12 @@
 package com.wavro.studio.audio
 
 import android.content.Context
-import android.media.AudioAttributes
-import android.media.AudioFocusRequest
-import android.media.AudioManager
-import android.media.audiofx.BassBoost
-import android.media.audiofx.Equalizer
 import android.media.audiofx.Visualizer
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -27,198 +21,36 @@ class AudioEngine(context: Context) {
     private val _fftData = MutableStateFlow(FloatArray(64))
     val fftData: StateFlow<FloatArray> = _fftData.asStateFlow()
 
-    private val _eqBands = MutableStateFlow<List<Short>>(emptyList())
-    val eqBands: StateFlow<List<Short>> = _eqBands.asStateFlow()
-
-    private val _eqPresetName = MutableStateFlow("Custom")
-    val eqPresetName: StateFlow<String> = _eqPresetName.asStateFlow()
-
-    private val _bassBoostLevel = MutableStateFlow(0)
-    val bassBoostLevel: StateFlow<Int> = _bassBoostLevel.asStateFlow()
-
-    // NEW: Expose Sleep Timer countdown (in seconds, null if inactive)
-    private val _sleepTimerRemaining = MutableStateFlow<Int?>(null)
-    val sleepTimerRemaining: StateFlow<Int?> = _sleepTimerRemaining.asStateFlow()
-
     private val player = ExoPlayer.Builder(context).build()
     private val scope = CoroutineScope(Dispatchers.Main)
-    private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-    private var audioFocusRequest: AudioFocusRequest? = null
-
     private var visualizer: Visualizer? = null
-    private var equalizer: Equalizer? = null
-    private var bassBoost: BassBoost? = null
-
-    private var playlist: List<Track> = emptyList()
-    private var currentIndex = -1
-    private var isShuffleOn = false
-    private var repeatMode = Player.REPEAT_MODE_OFF
-
-    private var sleepTimerJob: Job? = null
 
     init {
-        setupAudioFocus()
-        setupPlayerListener()
-    }
-
-    private fun setupPlayerListener() {
         player.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 _state.value = _state.value.copy(isPlaying = isPlaying)
-                if (isPlaying) startPositionTracker() else stopVisualizer()
+                if (isPlaying) startPositionTracker()
             }
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState == Player.STATE_READY) {
                     _state.value = _state.value.copy(durationMs = player.duration)
-                    setupVisualizer()
-                    setupEffects()
-                } else if (playbackState == Player.STATE_ENDED) {
-                    handleTrackEnded()
+                    setupVisualizer() // Attach visualizer when ready
                 }
-            }
-            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                val newIndex = mediaItem?.mediaId?.toIntOrNull() ?: -1
-                if (newIndex != -1) currentIndex = newIndex
             }
         })
     }
 
-    fun setPlaylist(tracks: List<Track>) { this.playlist = tracks }
-
     fun playTrack(track: Track) {
-        val idx = playlist.indexOfFirst { it.uri == track.uri }
-        if (idx != -1) currentIndex = idx
-        startPlayback(track)
-    }
-
-    private fun startPlayback(track: Track) {
-        player.setMediaItem(MediaItem.Builder().setUri(track.uri).setMediaId(currentIndex.toString()).build())
+        player.setMediaItem(MediaItem.fromUri(track.uri))
         player.prepare()
         player.play()
         _state.value = _state.value.copy(currentTrack = track, durationMs = track.duration)
     }
 
-    fun togglePlayPause() { if (player.isPlaying) player.pause() else player.play() }
-    fun seekTo(ms: Long) { player.seekTo(ms); _state.value = _state.value.copy(positionMs = ms) }
-
-    fun nextTrack() {
-        if (playlist.isEmpty()) return
-        if (isShuffleOn) { currentIndex = playlist.indices.random() } 
-        else {
-            currentIndex++
-            if (currentIndex >= playlist.size) {
-                currentIndex = if (repeatMode == Player.REPEAT_MODE_ALL) 0 else playlist.size - 1
-            }
-        }
-        startPlayback(playlist[currentIndex])
-    }
-
-    fun previousTrack() {
-        if (playlist.isEmpty()) return
-        if (isShuffleOn) { currentIndex = playlist.indices.random() } 
-        else {
-            currentIndex--
-            if (currentIndex < 0) {
-                currentIndex = if (repeatMode == Player.REPEAT_MODE_ALL) playlist.size - 1 else 0
-            }
-        }
-        startPlayback(playlist[currentIndex])
-    }
-
-    fun toggleShuffle() { isShuffleOn = !isShuffleOn; player.shuffleModeEnabled = isShuffleOn }
-
-    fun cycleRepeatMode() {
-        repeatMode = when (repeatMode) {
-            Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
-            Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
-            else -> Player.REPEAT_MODE_OFF
-        }
-        player.repeatMode = repeatMode
-    }
-
-    private fun handleTrackEnded() {
-        if (repeatMode == Player.REPEAT_MODE_ONE) { player.seekTo(0); player.play() } 
-        else { nextTrack() }
-    }
-
-    private fun startPositionTracker() {
-        scope.launch {
-            while (player.isPlaying) {
-                _state.value = _state.value.copy(positionMs = player.currentPosition)
-                delay(100)
-            }
-        }
-    }
-
-    private fun setupAudioFocus() {
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-            val playbackAttributes = AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_MEDIA)
-                .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                .build()
-            audioFocusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
-                .setAudioAttributes(playbackAttributes)
-                .setAcceptsDelayedFocusGain(true)
-                .setOnAudioFocusChangeListener { focusChange ->
-                    when (focusChange) {
-                        AudioManager.AUDIOFOCUS_LOSS -> player.pause()
-                        AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> player.pause()
-                        AudioManager.AUDIOFOCUS_GAIN -> player.play()
-                    }
-                }.build()
-        }
-    }
-
-    private fun setupEffects() {
-        equalizer?.release(); bassBoost?.release()
-        try {
-            val sessionId = player.audioSessionId
-            if (sessionId != 0) {
-                equalizer = Equalizer(0, sessionId).apply { enabled = true }
-                bassBoost = BassBoost(0, sessionId).apply { enabled = true; setStrength(0.toShort()) }
-                val bands = mutableListOf<Short>()
-                for (i in 0 until equalizer!!.numberOfBands) { bands.add(equalizer!!.getBandLevel(i.toShort())) }
-                _eqBands.value = bands
-            }
-        } catch (e: Exception) { e.printStackTrace() }
-    }
-
-    fun setEqBandLevel(bandIndex: Short, level: Short) {
-        try {
-            equalizer?.setBandLevel(bandIndex, level)
-            val current = _eqBands.value.toMutableList()
-            if (bandIndex.toInt() < current.size) {
-                current[bandIndex.toInt()] = level
-                _eqBands.value = current
-                _eqPresetName.value = "Custom"
-            }
-        } catch (e: Exception) {}
-    }
-
-    fun setBassBoost(level: Int) {
-        try { bassBoost?.setStrength(level.toShort()); _bassBoostLevel.value = level } catch (e: Exception) {}
-    }
-
-    fun applyEqPreset(presetName: String) {
-        val eq = equalizer ?: return
-        try {
-            val numPresets = eq.numberOfPresets
-            for (i in 0 until numPresets) {
-                val presetNameString = eq.getPresetName(i.toShort())
-                if (presetNameString.equals(presetName, ignoreCase = true)) {
-                    eq.usePreset(i.toShort())
-                    _eqPresetName.value = presetName
-                    val bands = mutableListOf<Short>()
-                    for (j in 0 until eq.numberOfBands) { bands.add(eq.getBandLevel(j.toShort())) }
-                    _eqBands.value = bands
-                    return
-                }
-            }
-        } catch (e: Exception) {}
-    }
-
     private fun setupVisualizer() {
         visualizer?.release()
+        if (player.audioSessionId == 0) return
+
         try {
             @Suppress("DEPRECATION")
             visualizer = Visualizer(player.audioSessionId).apply {
@@ -247,33 +79,25 @@ class AudioEngine(context: Context) {
                 }, Visualizer.getMaxCaptureRate() / 2, true, true)
                 enabled = true
             }
-        } catch (e: Exception) {}
-    }
-
-    private fun stopVisualizer() { visualizer?.enabled = false }
-
-    // NEW: Sleep Timer implementation
-    fun startSleepTimer(minutes: Int) {
-        sleepTimerJob?.cancel()
-        _sleepTimerRemaining.value = minutes * 60
-        sleepTimerJob = scope.launch {
-            while ((_sleepTimerRemaining.value ?: 0) > 0) {
-                delay(1000L)
-                _sleepTimerRemaining.value = _sleepTimerRemaining.value?.minus(1)
-            }
-            player.pause()
-            _sleepTimerRemaining.value = null
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 
-    fun cancelSleepTimer() {
-        sleepTimerJob?.cancel()
-        _sleepTimerRemaining.value = null
+    private fun startPositionTracker() {
+        scope.launch {
+            while (player.isPlaying) {
+                _state.value = _state.value.copy(positionMs = player.currentPosition)
+                delay(100)
+            }
+        }
     }
 
+    fun togglePlayPause() { if (player.isPlaying) player.pause() else player.play() }
+    fun seekTo(ms: Long) { player.seekTo(ms); _state.value = _state.value.copy(positionMs = ms) }
+
     fun release() {
-        sleepTimerJob?.cancel()
-        visualizer?.release(); equalizer?.release(); bassBoost?.release()
+        visualizer?.release()
         player.release()
     }
 }
