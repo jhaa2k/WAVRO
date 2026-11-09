@@ -5,6 +5,7 @@ plugins {
 
 android {
 <<<<<<< HEAD
+<<<<<<< HEAD
     namespace = "com.wavro.studio"
     compileSdk = 34
 
@@ -58,6 +59,17 @@ dependencies {
 
     testImplementation("junit:junit:4.13.2")
 }
+=======
+    // ... other configurations remain unchanged ...
+    buildFeatures { compose = true }
+    // Add back this block, it is required for Kotlin 1.9.x:
+    composeOptions {
+        kotlinCompilerExtensionVersion = "1.5.1"
+    }
+}
+
+// dependencies remain unchanged
+>>>>>>> 0ba5aeb2476a7d987cbaf64ad377d16ef60ebc67
 =======
     // ... other configurations remain unchanged ...
     buildFeatures { compose = true }
