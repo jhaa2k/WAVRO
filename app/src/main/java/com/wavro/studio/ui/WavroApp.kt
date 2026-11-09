@@ -12,11 +12,9 @@ fun WavroApp(app: WavroApplication) {
     val vm: StudioViewModel = viewModel(factory = object : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            // Pass the Application to the ViewModel
             return StudioViewModel(app) as T
         }
     })
 
-    // Pass ONLY the ViewModel to the screen
     StudioScreen(vm = vm)
 }
