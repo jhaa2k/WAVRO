@@ -9,6 +9,8 @@ import com.wavro.studio.audio.Track
 import com.wavro.studio.domain.Layer
 import com.wavro.studio.domain.LayerType
 import com.wavro.studio.domain.StudioProject
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -21,6 +23,7 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
     
     val playback = engine.state
     val fftData = engine.fftData
+    val eqBands = engine.eqBands
 
     private val _project = MutableStateFlow(StudioProject())
     val project: StateFlow<StudioProject> = _project.asStateFlow()
@@ -28,20 +31,23 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
     private val _libraryTracks = MutableStateFlow<List<Track>>(emptyList())
     val libraryTracks: StateFlow<List<Track>> = _libraryTracks.asStateFlow()
 
-    // Selected Layer for the Editor
     private val _selectedLayerId = MutableStateFlow<String?>(null)
     val selectedLayerId: StateFlow<String?> = _selectedLayerId.asStateFlow()
 
+    // Sleep Timer State
+    private val _sleepTimerRemaining = MutableStateFlow<Int?>(null)
+    val sleepTimerRemaining: StateFlow<Int?> = _sleepTimerRemaining.asStateFlow()
+    private var sleepTimerJob: Job? = null
+
     init {
-        // Scan library on start
-        viewModelScope.launch {
-            _libraryTracks.value = library.scanDeviceForMusic()
-        }
+        viewModelScope.launch { _libraryTracks.value = library.scanDeviceForMusic() }
     }
 
     fun playTrack(track: Track) = engine.playTrack(track)
     fun togglePlayback() = engine.togglePlayPause()
     fun seekTo(ms: Long) = engine.seekTo(ms)
+    
+    fun setEqBand(index: Short, level: Short) = engine.setEqBandLevel(index, level)
 
     fun selectLayer(id: String?) { _selectedLayerId.value = id }
 
@@ -58,10 +64,27 @@ class StudioViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun deleteLayer(id: String) {
-        _project.value = _project.value.copy(
-            layers = _project.value.layers.filter { it.id != id }
-        )
+        _project.value = _project.value.copy(layers = _project.value.layers.filter { it.id != id })
         if (_selectedLayerId.value == id) _selectedLayerId.value = null
+    }
+
+    // --- Sleep Timer Logic ---
+    fun startSleepTimer(minutes: Int) {
+        sleepTimerJob?.cancel()
+        _sleepTimerRemaining.value = minutes * 60
+        sleepTimerJob = viewModelScope.launch {
+            while ((_sleepTimerRemaining.value ?: 0) > 0) {
+                delay(1000)
+                _sleepTimerRemaining.value = _sleepTimerRemaining.value?.minus(1)
+            }
+            engine.togglePlayPause() // Pause when timer hits 0
+            _sleepTimerRemaining.value = null
+        }
+    }
+
+    fun cancelSleepTimer() {
+        sleepTimerJob?.cancel()
+        _sleepTimerRemaining.value = null
     }
 
     override fun onCleared() {
