@@ -10,14 +10,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-
-data class PlaybackState(
-    val isPlaying: Boolean = false,
-    val positionMs: Long = 0L,
-    val durationMs: Long = 0L,
-    val currentTrack: Track? = null
-)
 
 class AudioEngine(context: Context) {
     private val _state = MutableStateFlow(PlaybackState())
