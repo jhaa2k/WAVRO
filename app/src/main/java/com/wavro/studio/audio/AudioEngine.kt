@@ -1,8 +1,6 @@
 package com.wavro.studio.audio
 
 import android.content.Context
-import android.media.audiofx.BassBoost
-import android.media.audiofx.Equalizer
 import android.media.audiofx.Visualizer
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
@@ -25,19 +23,20 @@ class AudioEngine(context: Context) {
 
     private val player = ExoPlayer.Builder(context).build()
     private val scope = CoroutineScope(Dispatchers.Main)
-    
     private var visualizer: Visualizer? = null
-    private var equalizer: Equalizer? = null
-    private var bassBoost: BassBoost? = null
-
-    private val _eqBands = MutableStateFlow<List<Short>>(emptyList())
-    val eqBands: StateFlow<List<Short>> = _eqBands.asStateFlow()
 
     init {
         player.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 _state.value = _state.value.copy(isPlaying = isPlaying)
-                if (isPlaying) startPositionTracker() else stopVisualizer()
+                if (isPlaying) startPositionTracker()
+            }
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (playbackState == Player.STATE_READY) {
+                    _state.value = _state.value.copy(durationMs = player.duration)
+                    // Initialize visualizer ONLY when player is ready (fixes the 0 audioSessionId issue)
+                    setupVisualizer() 
+                }
             }
         })
     }
@@ -47,47 +46,18 @@ class AudioEngine(context: Context) {
         player.prepare()
         player.play()
         _state.value = _state.value.copy(currentTrack = track, durationMs = track.duration)
-        setupVisualizer()
-        setupEqualizer()
-    }
-
-    private fun setupEqualizer() {
-        equalizer?.release()
-        bassBoost?.release()
-        try {
-            val sessionId = player.audioSessionId
-            if (sessionId != 0) {
-                equalizer = Equalizer(0, sessionId).apply { enabled = true }
-                bassBoost = BassBoost(0, sessionId).apply { 
-                    enabled = true 
-                    setStrength(500.toShort())
-                }
-                val bands = mutableListOf<Short>()
-                for (i in 0 until equalizer!!.numberOfBands) {
-                    bands.add(equalizer!!.getBandLevel(i.toShort()))
-                }
-                _eqBands.value = bands
-            }
-        } catch (e: Exception) { e.printStackTrace() }
-    }
-
-    fun setEqBandLevel(bandIndex: Short, level: Short) {
-        try {
-            equalizer?.setBandLevel(bandIndex, level)
-            val current = _eqBands.value.toMutableList()
-            if (bandIndex.toInt() < current.size) {
-                current[bandIndex.toInt()] = level
-                _eqBands.value = current
-            }
-        } catch (e: Exception) {}
     }
 
     private fun setupVisualizer() {
         visualizer?.release()
+        val sessionId = player.audioSessionId
+        if (sessionId == 0) return // Safety check
+
         try {
             @Suppress("DEPRECATION")
-            visualizer = Visualizer(player.audioSessionId).apply {
-                captureSize = Visualizer.getCaptureSizeRange()[1]
+            visualizer = Visualizer(sessionId).apply {
+                // Use a reasonable capture size
+                captureSize = Visualizer.getCaptureSizeRange()[1] 
                 setDataCaptureListener(object : Visualizer.OnDataCaptureListener {
                     override fun onWaveFormDataCapture(v: Visualizer?, wf: ByteArray?, rate: Int) {}
                     override fun onFftDataCapture(v: Visualizer?, fft: ByteArray?, rate: Int) {
@@ -104,6 +74,7 @@ class AudioEngine(context: Context) {
                                         sum += sqrt(real * real + imag * imag)
                                     }
                                 }
+                                // Normalize to 0.0 - 1.0
                                 bands[i] = ((sum / chunkSize) / 128f).coerceIn(0f, 1f)
                             }
                             _fftData.value = bands
@@ -112,19 +83,16 @@ class AudioEngine(context: Context) {
                 }, Visualizer.getMaxCaptureRate() / 2, true, true)
                 enabled = true
             }
-        } catch (e: Exception) {}
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
-
-    private fun stopVisualizer() { visualizer?.enabled = false }
 
     private fun startPositionTracker() {
         scope.launch {
             while (player.isPlaying) {
-                _state.value = _state.value.copy(
-                    positionMs = player.currentPosition,
-                    durationMs = player.duration.coerceAtLeast(0)
-                )
-                delay(200)
+                _state.value = _state.value.copy(positionMs = player.currentPosition)
+                delay(100)
             }
         }
     }
@@ -134,8 +102,6 @@ class AudioEngine(context: Context) {
     
     fun release() { 
         visualizer?.release()
-        equalizer?.release()
-        bassBoost?.release()
         player.release() 
     }
 }
