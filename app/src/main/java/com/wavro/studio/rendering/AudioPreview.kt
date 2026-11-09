@@ -7,147 +7,51 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.Stroke
 import com.wavro.studio.domain.Layer
 import com.wavro.studio.domain.LayerType
-import com.wavro.studio.visualization.SpectrumMapper
-import kotlin.math.cos
 import kotlin.math.sin
 
 @Composable
 fun AudioPreview(
     layers: List<Layer>,
-    bands: SpectrumMapper.Bands,
+    audioAmplitude: Float,
     modifier: Modifier = Modifier
 ) {
     Canvas(modifier = modifier.fillMaxSize()) {
+        // Draw Background
         drawRect(Color.Black)
 
         layers.filter { it.visible }.forEach { layer ->
             when (layer.type) {
-                LayerType.BARS -> drawBars(layer, bands)
-                LayerType.CIRCLE -> drawCircleBars(layer, bands)
-                LayerType.WAVE -> drawWave(layer, bands)
-                LayerType.DOTS -> drawDots(layer, bands)
-                LayerType.PARTICLES -> drawParticles(layer, bands)
-                LayerType.TEXT -> drawTextLayer(layer)
-                LayerType.CONCENTRIC -> drawConcentric(layer, bands)
-                LayerType.BACKGROUND -> drawRect(
-                    color = Color(layer.colorPrimary),
-                    size = size
-                )
+                LayerType.BARS -> {
+                    val barCount = layer.spectrum.barCount
+                    val spacing = size.width / barCount
+                    val barWidth = spacing * 0.7f
+                    val baseColor = Color(layer.colorPrimary)
+
+                    // Fake spectrum data based on amplitude for demonstration
+                    // In a real app, you would pass the actual FFT data here
+                    for (i in 0 until barCount) {
+                        val fakeFrequency = (sin(i.toDouble() * 0.5) * audioAmplitude * 500).toFloat()
+                        val height = (size.height * 0.4f) * (fakeFrequency / 500f).coerceIn(0.05f, 1f)
+                        
+                        drawRect(
+                            color = baseColor,
+                            topLeft = Offset(i * spacing, size.height - height),
+                            size = Size(barWidth, height)
+                        )
+                    }
+                }
+                LayerType.CIRCLE -> {
+                    // Simple reactive circle
+                    drawCircle(
+                        color = Color(layer.colorPrimary).copy(alpha = 0.5f),
+                        radius = (size.minDimension * 0.2f) + (audioAmplitude * size.minDimension * 0.1f),
+                        center = Offset(size.width / 2, size.height / 2)
+                    )
+                }
                 else -> Unit
             }
         }
-    }
-}
-
-private fun DrawScope.drawBars(layer: Layer, b: SpectrumMapper.Bands) {
-    val span = size.width * 0.8f
-    val len = size.height * 0.35f * (layer.barLength / 100f)
-    val n = layer.barCount.coerceAtLeast(1)
-    val sl = span / n
-    val bw = sl * (layer.barThickness / 100f)
-    val x0 = (size.width - span) / 2f
-    val y0 = size.height * (layer.y / 100f)
-    val bands = floatArrayOf(b.bass, b.lowMid, b.mid, b.upMid, b.presence, b.brill)
-    repeat(n) { i ->
-        val v = bands[i % bands.size]
-        val h = (len * v).coerceAtLeast(1f)
-        drawRect(
-            color = Color(layer.colorPrimary),
-            topLeft = Offset(x0 + i * sl + (sl - bw) / 2f, y0 - h),
-            size = Size(bw, h)
-        )
-    }
-}
-
-private fun DrawScope.drawCircleBars(layer: Layer, b: SpectrumMapper.Bands) {
-    val cx = size.width * (layer.x / 100f)
-    val cy = size.height * (layer.y / 100f)
-    val r = minOf(size.width, size.height) * 0.22f
-    val n = layer.barCount.coerceAtLeast(1)
-    val bands = floatArrayOf(b.bass, b.lowMid, b.mid, b.upMid, b.presence, b.brill)
-    repeat(n) { i ->
-        val a = (i.toFloat() / n) * (Math.PI * 2).toFloat() - (Math.PI / 2).toFloat()
-        val v = bands[i % bands.size]
-        val inner = r
-        val outer = r + r * 0.5f * v * (layer.barLength / 100f)
-        drawLine(
-            color = Color(layer.colorPrimary),
-            start = Offset(cx + cos(a.toDouble()).toFloat() * inner, cy + sin(a.toDouble()).toFloat() * inner),
-            end = Offset(cx + cos(a.toDouble()).toFloat() * outer, cy + sin(a.toDouble()).toFloat() * outer),
-            strokeWidth = 4f
-        )
-    }
-}
-
-private fun DrawScope.drawWave(layer: Layer, b: SpectrumMapper.Bands) {
-    val span = size.width * 0.8f
-    val amp = size.height * 0.2f * (layer.barLength / 100f)
-    val cx = size.width / 2f
-    val cy = size.height * (layer.y / 100f)
-    val points = 100
-    val path = androidx.compose.ui.graphics.Path()
-    repeat(points) { i ->
-        val x = cx - span / 2f + span * i / points
-        val phase = i * 0.3f + b.volume * 10f
-        val y = cy + sin(phase.toDouble()).toFloat() * amp * b.volume
-        if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
-    }
-    drawPath(path, Color(layer.colorPrimary), style = Stroke(width = 3f))
-}
-
-private fun DrawScope.drawDots(layer: Layer, b: SpectrumMapper.Bands) {
-    val span = size.width * 0.8f
-    val n = layer.barCount.coerceAtLeast(1)
-    val sl = span / n
-    val x0 = (size.width - span) / 2f
-    val y0 = size.height * (layer.y / 100f)
-    repeat(n) { i ->
-        val v = (b.bass + b.mid) / 2f
-        drawCircle(
-            color = Color(layer.colorPrimary),
-            radius = 4f + v * 10f,
-            center = Offset(x0 + i * sl + sl / 2f, y0)
-        )
-    }
-}
-
-private fun DrawScope.drawParticles(layer: Layer, b: SpectrumMapper.Bands) {
-    val n = 30
-    val cx = size.width / 2f
-    val cy = size.height / 2f
-    repeat(n) { i ->
-        val a = i * 0.7f
-        val r = 80f + b.bass * 200f * (i % 3)
-        drawCircle(
-            color = Color(layer.colorPrimary).copy(alpha = 0.7f),
-            radius = 3f,
-            center = Offset(cx + cos(a.toDouble()).toFloat() * r, cy + sin(a.toDouble()).toFloat() * r)
-        )
-    }
-}
-
-private fun DrawScope.drawTextLayer(layer: Layer) {
-    drawRect(
-        color = Color(layer.colorPrimary).copy(alpha = 0.2f),
-        topLeft = Offset(size.width * 0.3f, size.height * 0.4f),
-        size = Size(size.width * 0.4f, size.height * 0.1f)
-    )
-}
-
-private fun DrawScope.drawConcentric(layer: Layer, b: SpectrumMapper.Bands) {
-    val cx = size.width / 2f
-    val cy = size.height / 2f
-    repeat(5) { i ->
-        val r = 40f + i * 30f + b.bass * 50f
-        drawCircle(
-            color = Color(layer.colorPrimary).copy(alpha = 0.5f),
-            radius = r,
-            center = Offset(cx, cy),
-            style = Stroke(width = 3f)
-        )
     }
 }
