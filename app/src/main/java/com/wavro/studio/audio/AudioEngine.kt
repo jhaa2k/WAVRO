@@ -21,7 +21,6 @@ import kotlinx.coroutines.launch
 import kotlin.math.sqrt
 
 class AudioEngine(context: Context) {
-    // --- State ---
     private val _state = MutableStateFlow(PlaybackState())
     val state: StateFlow<PlaybackState> = _state.asStateFlow()
 
@@ -37,24 +36,24 @@ class AudioEngine(context: Context) {
     private val _bassBoostLevel = MutableStateFlow(0)
     val bassBoostLevel: StateFlow<Int> = _bassBoostLevel.asStateFlow()
 
-    // --- Core ---
+    // NEW: Expose Sleep Timer countdown (in seconds, null if inactive)
+    private val _sleepTimerRemaining = MutableStateFlow<Int?>(null)
+    val sleepTimerRemaining: StateFlow<Int?> = _sleepTimerRemaining.asStateFlow()
+
     private val player = ExoPlayer.Builder(context).build()
     private val scope = CoroutineScope(Dispatchers.Main)
     private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private var audioFocusRequest: AudioFocusRequest? = null
 
-    // --- Effects ---
     private var visualizer: Visualizer? = null
     private var equalizer: Equalizer? = null
     private var bassBoost: BassBoost? = null
 
-    // --- Playback Queue & Modes ---
     private var playlist: List<Track> = emptyList()
     private var currentIndex = -1
     private var isShuffleOn = false
     private var repeatMode = Player.REPEAT_MODE_OFF
 
-    // --- Sleep Timer ---
     private var sleepTimerJob: Job? = null
 
     init {
@@ -78,20 +77,13 @@ class AudioEngine(context: Context) {
                 }
             }
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                // Sync current index when track changes automatically
                 val newIndex = mediaItem?.mediaId?.toIntOrNull() ?: -1
                 if (newIndex != -1) currentIndex = newIndex
             }
         })
     }
 
-    // ==========================================
-    // 1. PLAYBACK CONTROLS & QUEUE
-    // ==========================================
-
-    fun setPlaylist(tracks: List<Track>) {
-        this.playlist = tracks
-    }
+    fun setPlaylist(tracks: List<Track>) { this.playlist = tracks }
 
     fun playTrack(track: Track) {
         val idx = playlist.indexOfFirst { it.uri == track.uri }
@@ -106,20 +98,13 @@ class AudioEngine(context: Context) {
         _state.value = _state.value.copy(currentTrack = track, durationMs = track.duration)
     }
 
-    fun togglePlayPause() {
-        if (player.isPlaying) player.pause() else player.play()
-    }
-
-    fun seekTo(ms: Long) {
-        player.seekTo(ms)
-        _state.value = _state.value.copy(positionMs = ms)
-    }
+    fun togglePlayPause() { if (player.isPlaying) player.pause() else player.play() }
+    fun seekTo(ms: Long) { player.seekTo(ms); _state.value = _state.value.copy(positionMs = ms) }
 
     fun nextTrack() {
         if (playlist.isEmpty()) return
-        if (isShuffleOn) {
-            currentIndex = playlist.indices.random()
-        } else {
+        if (isShuffleOn) { currentIndex = playlist.indices.random() } 
+        else {
             currentIndex++
             if (currentIndex >= playlist.size) {
                 currentIndex = if (repeatMode == Player.REPEAT_MODE_ALL) 0 else playlist.size - 1
@@ -130,9 +115,8 @@ class AudioEngine(context: Context) {
 
     fun previousTrack() {
         if (playlist.isEmpty()) return
-        if (isShuffleOn) {
-            currentIndex = playlist.indices.random()
-        } else {
+        if (isShuffleOn) { currentIndex = playlist.indices.random() } 
+        else {
             currentIndex--
             if (currentIndex < 0) {
                 currentIndex = if (repeatMode == Player.REPEAT_MODE_ALL) playlist.size - 1 else 0
@@ -141,10 +125,7 @@ class AudioEngine(context: Context) {
         startPlayback(playlist[currentIndex])
     }
 
-    fun toggleShuffle() {
-        isShuffleOn = !isShuffleOn
-        player.shuffleModeEnabled = isShuffleOn
-    }
+    fun toggleShuffle() { isShuffleOn = !isShuffleOn; player.shuffleModeEnabled = isShuffleOn }
 
     fun cycleRepeatMode() {
         repeatMode = when (repeatMode) {
@@ -156,12 +137,8 @@ class AudioEngine(context: Context) {
     }
 
     private fun handleTrackEnded() {
-        if (repeatMode == Player.REPEAT_MODE_ONE) {
-            player.seekTo(0)
-            player.play()
-        } else {
-            nextTrack()
-        }
+        if (repeatMode == Player.REPEAT_MODE_ONE) { player.seekTo(0); player.play() } 
+        else { nextTrack() }
     }
 
     private fun startPositionTracker() {
@@ -172,10 +149,6 @@ class AudioEngine(context: Context) {
             }
         }
     }
-
-    // ==========================================
-    // 2. AUDIO FOCUS (Background Playback)
-    // ==========================================
 
     private fun setupAudioFocus() {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
@@ -196,27 +169,15 @@ class AudioEngine(context: Context) {
         }
     }
 
-    // ==========================================
-    // 3. HARDWARE EFFECTS (EQ & BASS BOOST)
-    // ==========================================
-
     private fun setupEffects() {
-        equalizer?.release()
-        bassBoost?.release()
+        equalizer?.release(); bassBoost?.release()
         try {
             val sessionId = player.audioSessionId
             if (sessionId != 0) {
                 equalizer = Equalizer(0, sessionId).apply { enabled = true }
-                bassBoost = BassBoost(0, sessionId).apply { 
-                    enabled = true 
-                    setStrength(0.toShort())
-                }
-                
-                // Read bands into state
+                bassBoost = BassBoost(0, sessionId).apply { enabled = true; setStrength(0.toShort()) }
                 val bands = mutableListOf<Short>()
-                for (i in 0 until equalizer!!.numberOfBands) {
-                    bands.add(equalizer!!.getBandLevel(i.toShort()))
-                }
+                for (i in 0 until equalizer!!.numberOfBands) { bands.add(equalizer!!.getBandLevel(i.toShort())) }
                 _eqBands.value = bands
             }
         } catch (e: Exception) { e.printStackTrace() }
@@ -234,38 +195,27 @@ class AudioEngine(context: Context) {
         } catch (e: Exception) {}
     }
 
-    fun setBassBoost(level: Int) { // 0 to 1000
-        try {
-            bassBoost?.setStrength(level.toShort())
-            _bassBoostLevel.value = level
-        } catch (e: Exception) {}
+    fun setBassBoost(level: Int) {
+        try { bassBoost?.setStrength(level.toShort()); _bassBoostLevel.value = level } catch (e: Exception) {}
     }
 
     fun applyEqPreset(presetName: String) {
         val eq = equalizer ?: return
         try {
-            // Android Equalizer presets are indexed 0 to numberOfPresets - 1
             val numPresets = eq.numberOfPresets
             for (i in 0 until numPresets) {
                 val presetNameString = eq.getPresetName(i.toShort())
                 if (presetNameString.equals(presetName, ignoreCase = true)) {
                     eq.usePreset(i.toShort())
                     _eqPresetName.value = presetName
-                    // Update state bands
                     val bands = mutableListOf<Short>()
-                    for (j in 0 until eq.numberOfBands) {
-                        bands.add(eq.getBandLevel(j.toShort()))
-                    }
+                    for (j in 0 until eq.numberOfBands) { bands.add(eq.getBandLevel(j.toShort())) }
                     _eqBands.value = bands
                     return
                 }
             }
         } catch (e: Exception) {}
     }
-
-    // ==========================================
-    // 4. FFT VISUALIZER
-    // ==========================================
 
     private fun setupVisualizer() {
         visualizer?.release()
@@ -300,35 +250,30 @@ class AudioEngine(context: Context) {
         } catch (e: Exception) {}
     }
 
-    private fun stopVisualizer() {
-        visualizer?.enabled = false
-    }
+    private fun stopVisualizer() { visualizer?.enabled = false }
 
-    // ==========================================
-    // 5. SLEEP TIMER
-    // ==========================================
-
+    // NEW: Sleep Timer implementation
     fun startSleepTimer(minutes: Int) {
         sleepTimerJob?.cancel()
+        _sleepTimerRemaining.value = minutes * 60
         sleepTimerJob = scope.launch {
-            delay(minutes * 60 * 1000L)
-            player.pause() // Auto-pause when timer finishes
+            while ((_sleepTimerRemaining.value ?: 0) > 0) {
+                delay(1000L)
+                _sleepTimerRemaining.value = _sleepTimerRemaining.value?.minus(1)
+            }
+            player.pause()
+            _sleepTimerRemaining.value = null
         }
     }
 
     fun cancelSleepTimer() {
         sleepTimerJob?.cancel()
+        _sleepTimerRemaining.value = null
     }
-
-    // ==========================================
-    // 6. CLEANUP
-    // ==========================================
 
     fun release() {
         sleepTimerJob?.cancel()
-        visualizer?.release()
-        equalizer?.release()
-        bassBoost?.release()
+        visualizer?.release(); equalizer?.release(); bassBoost?.release()
         player.release()
     }
 }
