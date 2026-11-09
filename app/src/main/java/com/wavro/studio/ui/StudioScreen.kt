@@ -17,7 +17,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.wavro.studio.audio.MusicLibrary
 import com.wavro.studio.audio.Track
-import com.wavro.studio.domain.Layer
 import com.wavro.studio.domain.LayerType
 import com.wavro.studio.editor.StudioViewModel
 import com.wavro.studio.rendering.AudioPreview
@@ -31,18 +30,16 @@ private val AC = Color(0xFFD97757)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StudioScreen(vm: StudioViewModel) {
-    var currentScreen by remember { mutableStateOf("Library") }
-    var tracks by remember { mutableStateOf<List<Track>>(emptyList()) }
+    var currentTab by remember { mutableIntStateOf(0) }
     var showEditor by remember { mutableStateOf(false) }
+    var tracks by remember { mutableStateOf<List<Track>>(emptyList()) }
     
     val musicLibrary = remember { MusicLibrary(vm.getApplication()) }
     val playbackState by vm.playback.collectAsState()
     val fftData by vm.fftData.collectAsState()
     val project by vm.project.collectAsState()
 
-    LaunchedEffect(Unit) {
-        tracks = musicLibrary.scanDeviceForMusic()
-    }
+    LaunchedEffect(Unit) { tracks = musicLibrary.scanDeviceForMusic() }
 
     Scaffold(
         containerColor = BG,
@@ -50,8 +47,10 @@ fun StudioScreen(vm: StudioViewModel) {
             TopAppBar(
                 title = { Text("WAVRO STUDIO", color = TX, fontWeight = FontWeight.ExtraBold) },
                 actions = {
-                    IconButton(onClick = { showEditor = !showEditor }) {
-                        Icon(Icons.Default.Edit, "Editor", tint = AC)
+                    if (currentTab == 2) { // If on Visualizer tab
+                        IconButton(onClick = { showEditor = !showEditor }) {
+                            Icon(Icons.Default.Edit, "Editor", tint = AC)
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = BG)
@@ -59,26 +58,28 @@ fun StudioScreen(vm: StudioViewModel) {
         },
         bottomBar = {
             NavigationBar(containerColor = PN) {
-                NavigationBarItem(
-                    selected = currentScreen == "Library",
-                    onClick = { currentScreen = "Library" },
-                    icon = { Icon(Icons.Default.LibraryMusic, null) },
-                    label = { Text("Library") },
-                    colors = NavigationBarItemDefaults.colors(selectedIconColor = AC, selectedTextColor = AC, unselectedIconColor = DM, unselectedTextColor = DM)
+                val tabs = listOf(
+                    "Library" to Icons.Default.LibraryMusic,
+                    "Playlists" to Icons.Default.QueueMusic,
+                    "Visualizer" to Icons.Default.GraphicEq,
+                    "Equalizer" to Icons.Default.Equalizer,
+                    "Settings" to Icons.Default.Settings
                 )
-                NavigationBarItem(
-                    selected = currentScreen == "Visualizer",
-                    onClick = { currentScreen = "Visualizer" },
-                    icon = { Icon(Icons.Default.GraphicEq, null) },
-                    label = { Text("Visualizer") },
-                    colors = NavigationBarItemDefaults.colors(selectedIconColor = AC, selectedTextColor = AC, unselectedIconColor = DM, unselectedTextColor = DM)
-                )
+                tabs.forEachIndexed { index, (label, icon) ->
+                    NavigationBarItem(
+                        selected = currentTab == index,
+                        onClick = { currentTab = index },
+                        icon = { Icon(icon, contentDescription = label) },
+                        label = { Text(label) },
+                        colors = NavigationBarItemDefaults.colors(selectedIconColor = AC, selectedTextColor = AC, unselectedIconColor = DM, unselectedTextColor = DM)
+                    )
+                }
             }
         }
     ) { padding ->
         Box(modifier = Modifier.padding(padding).fillMaxSize()) {
-            when (currentScreen) {
-                "Library" -> {
+            when (currentTab) {
+                0 -> { // Library Tab
                     LazyColumn(modifier = Modifier.fillMaxSize()) {
                         items(tracks) { track ->
                             ListItem(
@@ -87,20 +88,22 @@ fun StudioScreen(vm: StudioViewModel) {
                                 leadingContent = { Icon(Icons.Default.MusicNote, null, tint = AC) },
                                 modifier = Modifier.clickable { 
                                     vm.playTrack(track) 
-                                    currentScreen = "Visualizer"
+                                    currentTab = 2 // Automatically switch to visualizer when a song plays
                                 }
                             )
                             HorizontalDivider(color = PN)
                         }
                     }
                 }
-                "Visualizer" -> {
+                1 -> { // Playlists Tab Placeholder
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("Playlists Feature Coming Next", color = DM)
+                    }
+                }
+                2 -> { // Visualizer Tab
                     Column(modifier = Modifier.fillMaxSize()) {
                         Box(modifier = Modifier.weight(1f).fillMaxWidth().background(Color.Black)) {
-                            AudioPreview(
-                                layers = project.layers,
-                                fftData = fftData
-                            )
+                            AudioPreview(layers = project.layers, fftData = fftData)
                         }
                         
                         // Playback Controls Bar
@@ -128,15 +131,20 @@ fun StudioScreen(vm: StudioViewModel) {
                         )
                     }
                 }
+                3 -> { // Equalizer Tab Placeholder
+                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("Equalizer Coming Next", color = DM)
+                    }
+                }
+                4 -> { // Settings Tab Placeholder
+                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("Settings Coming Next", color = DM)
+                    }
+                }
             }
 
-            // Editor Bottom Sheet Overlay
             if (showEditor) {
-                ModalBottomSheet(
-                    onDismissRequest = { showEditor = false },
-                    containerColor = PN,
-                    modifier = Modifier.fillMaxHeight(0.7f)
-                ) {
+                ModalBottomSheet(onDismissRequest = { showEditor = false }, containerColor = PN, modifier = Modifier.fillMaxHeight(0.7f)) {
                     LayerEditorPanel(
                         layers = project.layers,
                         onUpdateLayer = { vm.updateLayer(it) },
@@ -150,12 +158,7 @@ fun StudioScreen(vm: StudioViewModel) {
 }
 
 @Composable
-fun LayerEditorPanel(
-    layers: List<Layer>,
-    onUpdateLayer: (Layer) -> Unit,
-    onAddLayer: (LayerType) -> Unit,
-    onDeleteLayer: (String) -> Unit
-) {
+fun LayerEditorPanel(layers: List<com.wavro.studio.domain.Layer>, onUpdateLayer: (com.wavro.studio.domain.Layer) -> Unit, onAddLayer: (LayerType) -> Unit, onDeleteLayer: (String) -> Unit) {
     var selectedLayerId by remember { mutableStateOf<String?>(layers.firstOrNull()?.id) }
     val selectedLayer = layers.find { it.id == selectedLayerId }
 
@@ -163,7 +166,6 @@ fun LayerEditorPanel(
         Text("Layer Editor", color = TX, fontSize = 18.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(8.dp))
         
-        // Add Layer Buttons
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = { onAddLayer(LayerType.BARS) }, colors = ButtonDefaults.buttonColors(containerColor = AC)) { Text("+ Bars") }
             Button(onClick = { onAddLayer(LayerType.CIRCLE) }, colors = ButtonDefaults.buttonColors(containerColor = AC)) { Text("+ Circle") }
@@ -172,13 +174,9 @@ fun LayerEditorPanel(
         
         Spacer(Modifier.height(16.dp))
         
-        // Layer List
         LazyColumn(modifier = Modifier.weight(1f)) {
             items(layers) { layer ->
-                Row(
-                    modifier = Modifier.fillMaxWidth().clickable { selectedLayerId = layer.id }.padding(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+                Row(modifier = Modifier.fillMaxWidth().clickable { selectedLayerId = layer.id }.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(if (layer.type == LayerType.TEXT) Icons.Default.TextFields else Icons.Default.BarChart, null, tint = if (layer.id == selectedLayerId) AC else TX)
                     Spacer(Modifier.width(8.dp))
                     Text(layer.name, color = if (layer.id == selectedLayerId) AC else TX, modifier = Modifier.weight(1f))
@@ -187,24 +185,14 @@ fun LayerEditorPanel(
             }
         }
 
-        // Properties for Selected Layer
         if (selectedLayer != null) {
             Divider(color = DM.copy(alpha = 0.2f))
             Text("Properties: ${selectedLayer.name}", color = TX, fontWeight = FontWeight.Bold)
-            
-            // Example Transform Sliders
             SliderProperty("Position X", selectedLayer.x, 0f..100f) { onUpdateLayer(selectedLayer.copy(x = it)) }
             SliderProperty("Position Y", selectedLayer.y, 0f..100f) { onUpdateLayer(selectedLayer.copy(y = it)) }
-            SliderProperty("Scale", selectedLayer.scale, 10f..200f) { onUpdateLayer(selectedLayer.copy(scale = it)) }
             
-            // Text specific properties
             if (selectedLayer.type == LayerType.TEXT) {
-                OutlinedTextField(
-                    value = selectedLayer.text.text,
-                    onValueChange = { onUpdateLayer(selectedLayer.copy(text = selectedLayer.text.copy(text = it))) },
-                    label = { Text("Text Content") },
-                    modifier = Modifier.fillMaxWidth()
-                )
+                OutlinedTextField(value = selectedLayer.text.text, onValueChange = { onUpdateLayer(selectedLayer.copy(text = selectedLayer.text.copy(text = it))) }, label = { Text("Text Content") }, modifier = Modifier.fillMaxWidth())
             }
         }
     }
@@ -214,13 +202,7 @@ fun LayerEditorPanel(
 fun SliderProperty(label: String, value: Float, range: ClosedFloatingPointRange<Float>, onValueChange: (Float) -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(label, color = DM, modifier = Modifier.width(80.dp), fontSize = 12.sp)
-        Slider(
-            value = value,
-            onValueChange = onValueChange,
-            valueRange = range,
-            modifier = Modifier.weight(1f),
-            colors = SliderDefaults.colors(thumbColor = AC, activeTrackColor = AC)
-        )
+        Slider(value = value, onValueChange = onValueChange, valueRange = range, modifier = Modifier.weight(1f), colors = SliderDefaults.colors(thumbColor = AC, activeTrackColor = AC))
     }
 }
 
