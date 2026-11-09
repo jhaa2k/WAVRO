@@ -1,6 +1,8 @@
 package com.wavro.studio.audio
 
 import android.content.Context
+import android.media.audiofx.BassBoost
+import android.media.audiofx.Equalizer
 import android.media.audiofx.Visualizer
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
@@ -18,13 +20,19 @@ class AudioEngine(context: Context) {
     private val _state = MutableStateFlow(PlaybackState())
     val state: StateFlow<PlaybackState> = _state.asStateFlow()
 
-    // 64 bands of normalized FFT data (0.0 to 1.0)
     private val _fftData = MutableStateFlow(FloatArray(64))
     val fftData: StateFlow<FloatArray> = _fftData.asStateFlow()
 
     private val player = ExoPlayer.Builder(context).build()
     private val scope = CoroutineScope(Dispatchers.Main)
+    
     private var visualizer: Visualizer? = null
+    private var equalizer: Equalizer? = null
+    private var bassBoost: BassBoost? = null
+
+    // Equalizer State
+    private val _eqBands = MutableStateFlow<List<Short>>(emptyList())
+    val eqBands: StateFlow<List<Short>> = _eqBands.asStateFlow()
 
     init {
         player.addListener(object : Player.Listener {
@@ -40,9 +48,48 @@ class AudioEngine(context: Context) {
         player.prepare()
         player.play()
         _state.value = _state.value.copy(currentTrack = track, durationMs = track.duration)
+        
+        // Initialize Audio Effects
         setupVisualizer()
+        setupEqualizer()
     }
 
+    private fun setupEqualizer() {
+        equalizer?.release()
+        bassBoost?.release()
+        try {
+            val sessionId = player.audioSessionId
+            if (sessionId != 0) {
+                equalizer = Equalizer(0, sessionId).apply { enabled = true }
+                bassBoost = BassBoost(0, sessionId).apply { 
+                    enabled = true 
+                    setStrength(500.toShort()) // 0 to 1000
+                }
+                
+                // Load available bands into State
+                val bands = mutableListOf<Short>()
+                for (i in 0 until equalizer!!.numberOfBands) {
+                    bands.add(equalizer!!.getBandLevel(i))
+                }
+                _eqBands.value = bands
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    fun setEqBandLevel(bandIndex: Short, level: Short) {
+        try {
+            equalizer?.setBandLevel(bandIndex, level)
+            val current = _eqBands.value.toMutableList()
+            if (bandIndex.toInt() < current.size) {
+                current[bandIndex.toInt()] = level
+                _eqBands.value = current
+            }
+        } catch (e: Exception) {}
+    }
+
+    // --- Visualizer Logic ---
     private fun setupVisualizer() {
         visualizer?.release()
         try {
@@ -65,7 +112,6 @@ class AudioEngine(context: Context) {
                                         sum += sqrt(real * real + imag * imag)
                                     }
                                 }
-                                // Normalize: / 255.0 and multiply by sensitivity
                                 bands[i] = ((sum / chunkSize) / 128f).coerceIn(0f, 1f)
                             }
                             _fftData.value = bands
@@ -74,9 +120,7 @@ class AudioEngine(context: Context) {
                 }, Visualizer.getMaxCaptureRate() / 2, true, true)
                 enabled = true
             }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
+        } catch (e: Exception) {}
     }
 
     private fun stopVisualizer() { visualizer?.enabled = false }
@@ -95,5 +139,11 @@ class AudioEngine(context: Context) {
 
     fun togglePlayPause() { if (player.isPlaying) player.pause() else player.play() }
     fun seekTo(ms: Long) { player.seekTo(ms); _state.value = _state.value.copy(positionMs = ms) }
-    fun release() { visualizer?.release(); player.release() }
+    
+    fun release() { 
+        visualizer?.release()
+        equalizer?.release()
+        bassBoost?.release()
+        player.release() 
+    }
 }
