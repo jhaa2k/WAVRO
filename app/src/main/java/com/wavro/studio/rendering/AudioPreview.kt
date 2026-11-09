@@ -7,51 +7,99 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.nativeCanvas
 import com.wavro.studio.domain.Layer
 import com.wavro.studio.domain.LayerType
-import kotlin.math.sin
 
 @Composable
 fun AudioPreview(
     layers: List<Layer>,
-    audioAmplitude: Float,
+    fftData: FloatArray,
     modifier: Modifier = Modifier
 ) {
     Canvas(modifier = modifier.fillMaxSize()) {
-        // Draw Background
-        drawRect(Color.Black)
+        drawRect(Color.Black) // Default background
 
         layers.filter { it.visible }.forEach { layer ->
-            when (layer.type) {
-                LayerType.BARS -> {
-                    val barCount = layer.spectrum.barCount
-                    val spacing = size.width / barCount
-                    val barWidth = spacing * 0.7f
-                    val baseColor = Color(layer.colorPrimary)
-
-                    // Fake spectrum data based on amplitude for demonstration
-                    // In a real app, you would pass the actual FFT data here
-                    for (i in 0 until barCount) {
-                        val fakeFrequency = (sin(i.toDouble() * 0.5) * audioAmplitude * 500).toFloat()
-                        val height = (size.height * 0.4f) * (fakeFrequency / 500f).coerceIn(0.05f, 1f)
-                        
-                        drawRect(
-                            color = baseColor,
-                            topLeft = Offset(i * spacing, size.height - height),
-                            size = Size(barWidth, height)
-                        )
-                    }
+            // Apply Transformations
+            val cx = size.width * (layer.x / 100f)
+            val cy = size.height * (layer.y / 100f)
+            
+            rotate(layer.rotation, pivot = Offset(cx, cy)) {
+                when (layer.type) {
+                    LayerType.BARS -> drawSpectrumBars(layer, fftData, cx, cy)
+                    LayerType.CIRCLE -> drawCircularSpectrum(layer, fftData, cx, cy)
+                    LayerType.TEXT -> drawText(layer, cx, cy)
+                    LayerType.BACKGROUND -> drawRect(Color(layer.colorPrimary), size = size)
+                    else -> Unit
                 }
-                LayerType.CIRCLE -> {
-                    // Simple reactive circle
-                    drawCircle(
-                        color = Color(layer.colorPrimary).copy(alpha = 0.5f),
-                        radius = (size.minDimension * 0.2f) + (audioAmplitude * size.minDimension * 0.1f),
-                        center = Offset(size.width / 2, size.height / 2)
-                    )
-                }
-                else -> Unit
             }
         }
+    }
+}
+
+private fun DrawScope.drawSpectrumBars(layer: Layer, fft: FloatArray, cx: Float, cy: Float) {
+    val barCount = layer.spectrum.barCount
+    val totalWidth = size.width * 0.8f // Use 80% of screen width
+    val spacing = totalWidth / barCount
+    val barWidth = spacing * 0.7f
+    val maxHeight = size.height * 0.4f
+    val startX = cx - (totalWidth / 2f)
+
+    for (i in 0 until barCount) {
+        // Map the 64 FFT bands to the requested bar count
+        val fftIndex = (i.toFloat() / barCount * fft.size).toInt().coerceIn(0, fft.size - 1)
+        val amplitude = fft[fftIndex] * layer.spectrum.sensitivity
+        val barHeight = (maxHeight * amplitude).coerceAtLeast(2f)
+
+        drawRect(
+            color = Color(layer.colorPrimary),
+            topLeft = Offset(startX + (i * spacing), cy - barHeight), // Draw upwards from center Y
+            size = Size(barWidth, barHeight)
+        )
+    }
+}
+
+private fun DrawScope.drawCircularSpectrum(layer: Layer, fft: FloatArray, cx: Float, cy: Float) {
+    val barCount = layer.spectrum.barCount
+    val radius = size.minDimension * 0.2f
+    val maxBarLength = size.minDimension * 0.2f
+
+    for (i in 0 until barCount) {
+        val fftIndex = (i.toFloat() / barCount * fft.size).toInt().coerceIn(0, fft.size - 1)
+        val amplitude = fft[fftIndex] * layer.spectrum.sensitivity
+        val barLength = (maxBarLength * amplitude).coerceAtLeast(2f)
+        
+        val angle = (i.toFloat() / barCount) * (Math.PI * 2).toFloat() - (Math.PI / 2).toFloat()
+        
+        val startX = cx + kotlin.math.cos(angle) * radius
+        val startY = cy + kotlin.math.sin(angle) * radius
+        val endX = cx + kotlin.math.cos(angle) * (radius + barLength)
+        val endY = cy + kotlin.math.sin(angle) * (radius + barLength)
+
+        drawLine(
+            color = Color(layer.colorPrimary),
+            start = Offset(startX, startY),
+            end = Offset(endX, endY),
+            strokeWidth = 4f
+        )
+    }
+}
+
+private fun DrawScope.drawText(layer: Layer, cx: Float, cy: Float) {
+    drawContext.canvas.nativeCanvas.apply {
+        val paint = android.graphics.Paint().apply {
+            color = layer.colorPrimary
+            textSize = layer.text.textSize * density
+            isAntiAlias = true
+            textAlign = android.graphics.Paint.Align.CENTER
+            typeface = android.graphics.Typeface.create(
+                android.graphics.Typeface.DEFAULT, 
+                if (layer.text.isBold) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL
+            )
+        }
+        drawText(layer.text.text, cx, cy, paint)
     }
 }
