@@ -30,7 +30,6 @@ class AudioEngine(context: Context) {
     private var equalizer: Equalizer? = null
     private var bassBoost: BassBoost? = null
 
-    // Equalizer State
     private val _eqBands = MutableStateFlow<List<Short>>(emptyList())
     val eqBands: StateFlow<List<Short>> = _eqBands.asStateFlow()
 
@@ -48,8 +47,6 @@ class AudioEngine(context: Context) {
         player.prepare()
         player.play()
         _state.value = _state.value.copy(currentTrack = track, durationMs = track.duration)
-        
-        // Initialize Audio Effects
         setupVisualizer()
         setupEqualizer()
     }
@@ -63,19 +60,15 @@ class AudioEngine(context: Context) {
                 equalizer = Equalizer(0, sessionId).apply { enabled = true }
                 bassBoost = BassBoost(0, sessionId).apply { 
                     enabled = true 
-                    setStrength(500.toShort()) // 0 to 1000
+                    setStrength(500.toShort())
                 }
-                
-                // Load available bands into State
                 val bands = mutableListOf<Short>()
                 for (i in 0 until equalizer!!.numberOfBands) {
-                    bands.add(equalizer!!.getBandLevel(i))
+                    bands.add(equalizer!!.getBandLevel(i.toShort()))
                 }
                 _eqBands.value = bands
             }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
+        } catch (e: Exception) { e.printStackTrace() }
     }
 
     fun setEqBandLevel(bandIndex: Short, level: Short) {
@@ -89,7 +82,6 @@ class AudioEngine(context: Context) {
         } catch (e: Exception) {}
     }
 
-    // --- Visualizer Logic ---
     private fun setupVisualizer() {
         visualizer?.release()
         try {
