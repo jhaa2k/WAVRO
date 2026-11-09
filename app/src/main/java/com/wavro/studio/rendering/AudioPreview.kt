@@ -14,16 +14,12 @@ import com.wavro.studio.domain.Layer
 import com.wavro.studio.domain.LayerType
 
 @Composable
-fun AudioPreview(
-    layers: List<Layer>,
-    fftData: FloatArray,
-    modifier: Modifier = Modifier
-) {
+fun AudioPreview(layers: List<Layer>, fftData: FloatArray, modifier: Modifier = Modifier) {
     Canvas(modifier = modifier.fillMaxSize()) {
-        drawRect(Color.Black) // Default background
+        // Draw Background
+        drawRect(Color.Black)
 
         layers.filter { it.visible }.forEach { layer ->
-            // Apply Transformations
             val cx = size.width * (layer.x / 100f)
             val cy = size.height * (layer.y / 100f)
             
@@ -32,7 +28,6 @@ fun AudioPreview(
                     LayerType.BARS -> drawSpectrumBars(layer, fftData, cx, cy)
                     LayerType.CIRCLE -> drawCircularSpectrum(layer, fftData, cx, cy)
                     LayerType.TEXT -> drawText(layer, cx, cy)
-                    LayerType.BACKGROUND -> drawRect(Color(layer.colorPrimary), size = size)
                     else -> Unit
                 }
             }
@@ -42,21 +37,22 @@ fun AudioPreview(
 
 private fun DrawScope.drawSpectrumBars(layer: Layer, fft: FloatArray, cx: Float, cy: Float) {
     val barCount = layer.spectrum.barCount
-    val totalWidth = size.width * 0.8f // Use 80% of screen width
+    val totalWidth = size.width * 0.8f
     val spacing = totalWidth / barCount
     val barWidth = spacing * 0.7f
-    val maxHeight = size.height * 0.4f
+    val maxHeight = size.height * 0.3f
     val startX = cx - (totalWidth / 2f)
 
     for (i in 0 until barCount) {
-        // Map the 64 FFT bands to the requested bar count
+        // Map the 64 FFT bands to the bar count
         val fftIndex = (i.toFloat() / barCount * fft.size).toInt().coerceIn(0, fft.size - 1)
-        val amplitude = fft[fftIndex] * layer.spectrum.sensitivity
-        val barHeight = (maxHeight * amplitude).coerceAtLeast(2f)
+        // Apply sensitivity
+        val amplitude = (fft[fftIndex] * layer.spectrum.sensitivity).coerceIn(0.01f, 1f)
+        val barHeight = (maxHeight * amplitude).coerceAtLeast(4f)
 
         drawRect(
             color = Color(layer.colorPrimary),
-            topLeft = Offset(startX + (i * spacing), cy - barHeight), // Draw upwards from center Y
+            topLeft = Offset(startX + (i * spacing), cy - barHeight), // Draw up from center
             size = Size(barWidth, barHeight)
         )
     }
@@ -64,14 +60,13 @@ private fun DrawScope.drawSpectrumBars(layer: Layer, fft: FloatArray, cx: Float,
 
 private fun DrawScope.drawCircularSpectrum(layer: Layer, fft: FloatArray, cx: Float, cy: Float) {
     val barCount = layer.spectrum.barCount
-    val radius = size.minDimension * 0.2f
+    val radius = size.minDimension * 0.15f
     val maxBarLength = size.minDimension * 0.2f
 
     for (i in 0 until barCount) {
         val fftIndex = (i.toFloat() / barCount * fft.size).toInt().coerceIn(0, fft.size - 1)
-        val amplitude = fft[fftIndex] * layer.spectrum.sensitivity
-        val barLength = (maxBarLength * amplitude).coerceAtLeast(2f)
-        
+        val amplitude = (fft[fftIndex] * layer.spectrum.sensitivity).coerceIn(0.01f, 1f)
+        val barLength = (maxBarLength * amplitude).coerceAtLeast(4f)
         val angle = (i.toFloat() / barCount) * (Math.PI * 2).toFloat() - (Math.PI / 2).toFloat()
         
         val startX = cx + kotlin.math.cos(angle) * radius
@@ -79,12 +74,7 @@ private fun DrawScope.drawCircularSpectrum(layer: Layer, fft: FloatArray, cx: Fl
         val endX = cx + kotlin.math.cos(angle) * (radius + barLength)
         val endY = cy + kotlin.math.sin(angle) * (radius + barLength)
 
-        drawLine(
-            color = Color(layer.colorPrimary),
-            start = Offset(startX, startY),
-            end = Offset(endX, endY),
-            strokeWidth = 4f
-        )
+        drawLine(color = Color(layer.colorPrimary), start = Offset(startX, startY), end = Offset(endX, endY), strokeWidth = 6f)
     }
 }
 
@@ -95,10 +85,7 @@ private fun DrawScope.drawText(layer: Layer, cx: Float, cy: Float) {
             textSize = layer.text.textSize * density
             isAntiAlias = true
             textAlign = android.graphics.Paint.Align.CENTER
-            typeface = android.graphics.Typeface.create(
-                android.graphics.Typeface.DEFAULT, 
-                if (layer.text.isBold) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL
-            )
+            typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, if (layer.text.isBold) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
         }
         drawText(layer.text.text, cx, cy, paint)
     }
