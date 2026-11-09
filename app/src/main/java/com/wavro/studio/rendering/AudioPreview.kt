@@ -9,6 +9,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.nativeCanvas
 import com.wavro.studio.domain.Layer
 import com.wavro.studio.domain.LayerType
@@ -16,19 +17,20 @@ import com.wavro.studio.domain.LayerType
 @Composable
 fun AudioPreview(layers: List<Layer>, fftData: FloatArray, modifier: Modifier = Modifier) {
     Canvas(modifier = modifier.fillMaxSize()) {
-        // Draw Background
-        drawRect(Color.Black)
+        drawRect(Color.Black) // Background
 
         layers.filter { it.visible }.forEach { layer ->
             val cx = size.width * (layer.x / 100f)
             val cy = size.height * (layer.y / 100f)
             
             rotate(layer.rotation, pivot = Offset(cx, cy)) {
-                when (layer.type) {
-                    LayerType.BARS -> drawSpectrumBars(layer, fftData, cx, cy)
-                    LayerType.CIRCLE -> drawCircularSpectrum(layer, fftData, cx, cy)
-                    LayerType.TEXT -> drawText(layer, cx, cy)
-                    else -> Unit
+                scale(layer.scale / 100f, pivot = Offset(cx, cy)) {
+                    when (layer.type) {
+                        LayerType.BARS -> drawSpectrumBars(layer, fftData, cx, cy)
+                        LayerType.CIRCLE -> drawCircularSpectrum(layer, fftData, cx, cy)
+                        LayerType.TEXT -> drawText(layer, cx, cy)
+                        else -> Unit
+                    }
                 }
             }
         }
@@ -44,15 +46,13 @@ private fun DrawScope.drawSpectrumBars(layer: Layer, fft: FloatArray, cx: Float,
     val startX = cx - (totalWidth / 2f)
 
     for (i in 0 until barCount) {
-        // Map the 64 FFT bands to the bar count
         val fftIndex = (i.toFloat() / barCount * fft.size).toInt().coerceIn(0, fft.size - 1)
-        // Apply sensitivity
         val amplitude = (fft[fftIndex] * layer.spectrum.sensitivity).coerceIn(0.01f, 1f)
         val barHeight = (maxHeight * amplitude).coerceAtLeast(4f)
 
         drawRect(
             color = Color(layer.colorPrimary),
-            topLeft = Offset(startX + (i * spacing), cy - barHeight), // Draw up from center
+            topLeft = Offset(startX + (i * spacing), cy - barHeight),
             size = Size(barWidth, barHeight)
         )
     }
@@ -82,7 +82,7 @@ private fun DrawScope.drawText(layer: Layer, cx: Float, cy: Float) {
     drawContext.canvas.nativeCanvas.apply {
         val paint = android.graphics.Paint().apply {
             color = layer.colorPrimary
-            textSize = layer.text.textSize * density
+            textSize = layer.text.textSize * density * 2f // Scaled up for visibility
             isAntiAlias = true
             textAlign = android.graphics.Paint.Align.CENTER
             typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, if (layer.text.isBold) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
