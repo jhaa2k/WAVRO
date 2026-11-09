@@ -1,6 +1,7 @@
 package com.wavro.studio.audio
 
 import android.content.Context
+import android.media.audiofx.Visualizer
 import android.net.Uri
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
@@ -17,16 +18,71 @@ class AudioEngine(context: Context) {
     private val _state = MutableStateFlow(PlaybackState())
     val state: StateFlow<PlaybackState> = _state.asStateFlow()
 
+    // Exposes FFT data (0.0 to 1.0) to the UI
+    private val _fftData = MutableStateFlow(FloatArray(64))
+    val fftData: StateFlow<FloatArray> = _fftData.asStateFlow()
+
     private val player = ExoPlayer.Builder(context).build()
     private val scope = CoroutineScope(Dispatchers.Main)
+    private var visualizer: Visualizer? = null
 
     init {
         player.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 _state.value = _state.value.copy(isPlaying = isPlaying)
-                if (isPlaying) startPositionTracker()
+                if (isPlaying) startPositionTracker() else stopVisualizer()
             }
         })
+    }
+
+    fun playTrack(track: Track) {
+        player.setMediaItem(MediaItem.fromUri(track.uri))
+        player.prepare()
+        player.play()
+        _state.value = _state.value.copy(currentTrack = track, durationMs = track.duration)
+        setupVisualizer()
+    }
+
+    private fun setupVisualizer() {
+        visualizer?.release()
+        try {
+            @Suppress("DEPRECATION")
+            visualizer = Visualizer(player.audioSessionId).apply {
+                captureSize = Visualizer.getCaptureSizeRange()[1] // Max size
+                setDataCaptureListener(object : Visualizer.OnDataCaptureListener {
+                    override fun onWaveFormDataCapture(v: Visualizer?, wf: ByteArray?, rate: Int) {}
+                    
+                    override fun onFftDataCapture(v: Visualizer?, fft: ByteArray?, rate: Int) {
+                        if (fft != null) {
+                            // Convert raw FFT bytes to a normalized Float array
+                            val bands = FloatArray(64)
+                            val chunkSize = fft.size / 64
+                            for (i in 0 until 64) {
+                                var sum = 0f
+                                for (j in 0 until chunkSize) {
+                                    val index = (i * chunkSize + j) * 2 // Real/Imaginary pairs
+                                    if (index + 1 < fft.size) {
+                                        val real = fft[index].toFloat()
+                                        val imag = fft[index + 1].toFloat()
+                                        sum += kotlin.math.sqrt(real * real + imag * imag)
+                                    }
+                                }
+                                // Normalize roughly between 0.0 and 1.0
+                                bands[i] = (sum / chunkSize / 128f).coerceIn(0f, 1f)
+                            }
+                            _fftData.value = bands
+                        }
+                    }
+                }, Visualizer.getMaxCaptureRate() / 2, true, true)
+                enabled = true
+            }
+        } catch (e: Exception) {
+            // Visualizer fails on some devices/emulators
+        }
+    }
+
+    private fun stopVisualizer() {
+        visualizer?.enabled = false
     }
 
     private fun startPositionTracker() {
@@ -41,13 +97,6 @@ class AudioEngine(context: Context) {
         }
     }
 
-    fun playTrack(track: Track) {
-        player.setMediaItem(MediaItem.fromUri(track.uri))
-        player.prepare()
-        player.play()
-        _state.value = _state.value.copy(currentTrack = track, durationMs = track.duration)
-    }
-
     fun togglePlayPause() {
         if (player.isPlaying) player.pause() else player.play()
     }
@@ -58,6 +107,7 @@ class AudioEngine(context: Context) {
     }
 
     fun release() {
+        visualizer?.release()
         player.release()
     }
 }
