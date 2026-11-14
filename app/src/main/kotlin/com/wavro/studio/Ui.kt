@@ -1,6 +1,9 @@
 package com.wavro.studio
 import android.content.Intent
-import android.graphics.*
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Paint as AndroidPaint
+import android.graphics.Typeface
 import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.*
@@ -14,6 +17,7 @@ import androidx.compose.foundation.shape.*
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.*
 import androidx.compose.ui.draw.*
 import androidx.compose.ui.geometry.*
@@ -21,6 +25,8 @@ import androidx.compose.ui.graphics.Canvas as GCanvas
 import androidx.compose.ui.graphics.Paint as GPaint
 import androidx.compose.ui.graphics.Path as GPath
 import androidx.compose.ui.graphics.*
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.drawscope.*
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
@@ -165,11 +171,11 @@ fun DrawScope.particles(fx:FX,rnd:FloatArray,img:ImageBitmap?){val v=fx.vm;val i
     val an=v.s(id,"anim");val sp=v.f(id,"animSp");val sz=v.f(id,"size")*size.height*(1+fx.m(id,"mScale")*0+(if(an=="Zoom")sin(t*sp*3)*.1f else 0f))
     val it=v.s(id,"style").contains("Italic");val w=if(v.s(id,"style").contains("Bold"))max(700,v.s(id,"weight").toInt()) else v.s(id,"weight").toInt()
     val tf=if(Build.VERSION.SDK_INT>=28)Typeface.create(Typeface.create(v.s(id,"font"),Typeface.NORMAL),w,it) else Typeface.create(v.s(id,"font"),if(w>=600)Typeface.BOLD else Typeface.NORMAL)
-    val p=Paint().apply{isAntiAlias=true;typeface=tf;textSize=sz;letterSpacing=v.f(id,"ls")*.3f;textAlign=when(v.s(id,"align")){"Left"->Paint.Align.LEFT;"Right"->Paint.Align.RIGHT;else->Paint.Align.CENTER};color=hx(v.s(id,"color")).toArgb()
+    val p=AndroidPaint().apply{isAntiAlias=true;typeface=tf;textSize=sz;letterSpacing=v.f(id,"ls")*.3f;textAlign=when(v.s(id,"align")){"Left"->AndroidPaint.Align.LEFT;"Right"->Paint.Align.RIGHT;else->Paint.Align.CENTER};color=hx(v.s(id,"color")).toArgb()
      setShadowLayer(v.f(id,"shB")*30,(v.f(id,"shX")-.5f)*40,(v.f(id,"shY")-.5f)*40,hx(v.s(id,"shCol")).toArgb())
      if(an=="Fade")alpha=((.5f+.5f*sin(t*sp*3))*255).toInt()}
     val yo=when(an){"Slide Up"->-((t*sp*60)%40);"Slide Down"->(t*sp*60)%40;else->0f}
     val lines=s.split("\n");lines.forEachIndexed{i,ln->val y=yo+i*sz*(.8f+v.f(id,"lh"))
-     if(v.f(id,"olW")>0f)drawContext.canvas.nativeCanvas.drawText(ln,0f,y,Paint(p).apply{style=Paint.Style.STROKE;strokeWidth=v.f(id,"olW")*20;color=hx(v.s(id,"olCol")).toArgb()})
+     if(v.f(id,"olW")>0f)drawContext.canvas.nativeCanvas.drawText(ln,0f,y,AndroidPaint(p).apply{style=AndroidPaint.Style.STROKE;strokeWidth=v.f(id,"olW")*20;color=hx(v.s(id,"olCol")).toArgb()})
      drawContext.canvas.nativeCanvas.drawText(ln,0f,y,p)}}}}
 }
